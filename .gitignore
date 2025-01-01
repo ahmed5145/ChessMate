@@ -1,0 +1,8 @@
+# Design doc for the project
+DesignDoc.DOCX 
+
+.venv
+.mypy_cache
+__pycache__
+
+db.sqlite3
