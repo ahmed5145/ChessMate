@@ -127,3 +127,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Path to Stockfish executable
+STOCKFISH_PATH = "C:/Users/PCAdmin/Downloads/stockfish/windows-x86-64-avx2/stockfish/stockfish-windows-x86-64-avx2.exe"
