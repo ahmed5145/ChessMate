@@ -4,6 +4,8 @@ import requests
 from .models import Player, Game, GameAnalysis
 from .utils import analyze_game, generate_feedback
 from io import StringIO
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
 
 # Base URL for Chess.com API
 BASE_URL = "https://api.chess.com/pub/player"
@@ -127,3 +129,81 @@ def game_feedback_view(request, game_id):
     feedback = generate_feedback(analysis_data, game.is_white)
     return JsonResponse({'feedback': feedback})
 
+
+#==================================Login Logic==================================
+from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework import status
+
+# Helper function to generate tokens for a user
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        "refresh": str(refresh),
+        "access": str(refresh.access_token),
+    }
+
+@api_view(["POST"])
+def register_view(request):
+    """
+    Handle user registration
+    """
+    data = request.data
+    email = data.get("email")
+    password = data.get("password")
+    username = data.get("username")
+
+    if not email or not password or not username:
+        return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if User.objects.filter(email=email).exists():
+        return Response({"error": "Email already in use."}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = User.objects.create_user(username=username, email=email, password=password)
+    return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
+
+@api_view(["POST"])
+def login_view(request):
+    """
+    Handle user login
+    """
+    data = request.data
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return Response({"error": "Both email and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return Response({"error": "Invalid email or password."}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = authenticate(username=user.username, password=password)
+    if user is None:
+        return Response({"error": "Invalid email or password."}, status=status.HTTP_400_BAD_REQUEST)
+
+    tokens = get_tokens_for_user(user)
+    return Response({"message": "Login successful!", "tokens": tokens}, status=status.HTTP_200_OK)
+
+
+
+#================================== Testing Data ==================================
+def games_view(request):
+    games = [
+        {"id": 1, "opponent": "Player1", "result": "Win"},
+        {"id": 2, "opponent": "Player2", "result": "Loss"},
+        {"id": 3, "opponent": "Player3", "result": "Draw"},
+    ]
+    return JsonResponse({"games": games})
+
+def game_analysis_view(request, game_id):
+    analysis = [
+        {"move": "e4", "score": 0.3},
+        {"move": "e5", "score": 0.2},
+        {"move": "Nf3", "score": 0.5},
+    ]
+    return JsonResponse({"game_id": game_id, "analysis": analysis})
