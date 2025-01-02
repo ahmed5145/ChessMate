@@ -1,8 +1,8 @@
 from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 import requests
-from .models import *
-from .utils import analyze_game
+from .models import Player, Game, GameAnalysis
+from .utils import analyze_game, generate_feedback
 from io import StringIO
 
 # Base URL for Chess.com API
@@ -46,13 +46,26 @@ def fetch_games_from_archive_by_type(archive_url, game_type):
 
 # View to fetch and return games for a specific username and game type
 def fetch_games(request, username, game_type):
+    player, _ = Player.objects.get_or_create(username=username)
     archives = fetch_archives(username)
     all_games = []
 
     if archives:
         for archive in archives:
             games = fetch_games_from_archive_by_type(archive, game_type)
-            all_games.extend(games)
+            for game_data in games:
+                is_white = game_data['white']['username'] == username
+                game, created = Game.objects.get_or_create(
+                    player=player,
+                    game_url=game_data['url'],
+                    played_at=game_data['end_time'],  # Adjust time format
+                    opponent=game_data['black']['username'] if is_white else game_data['white']['username'],
+                    result=game_data['white']['result'] if is_white else game_data['black']['result'],
+                    pgn=game_data['pgn'],
+                    is_white=is_white
+                )
+                if created:
+                    all_games.append(game_data)
     
     if all_games:
         return JsonResponse({"games": all_games}, safe=False)
@@ -62,8 +75,13 @@ def fetch_games(request, username, game_type):
 def analyze_game_view(request, game_id):
     game = get_object_or_404(Game, id=game_id)
     pgn = StringIO(game.pgn)  # Treat PGN as a file-like object
-    analysis = analyze_game(pgn)  # Pass the file-like object directly
+    analysis, opening_name = analyze_game(pgn)  # Pass the file-like object directly
     
+    # Save the opening name if not already set
+    if not game.opening_name:
+        game.opening_name = opening_name
+        game.save()
+        
     # Save the analysis results to the database
     for move_analysis in analysis:
         GameAnalysis.objects.create(
@@ -73,7 +91,7 @@ def analyze_game_view(request, game_id):
             depth=move_analysis['depth']
         )
     
-    return JsonResponse({'status': 'success', 'analysis': analysis})
+    return JsonResponse({'status': 'success', 'analysis': analysis, 'opening': opening_name})
 
 def bulk_analyze_view(request, player_id):
     player = get_object_or_404(Player, id=player_id)
@@ -82,7 +100,7 @@ def bulk_analyze_view(request, player_id):
 
     for game in games:
         pgn = StringIO(game.pgn)  # Treat PGN as a file-like object
-        analysis = analyze_game(pgn)  # Pass the file-like object directly
+        analysis, _ = analyze_game(pgn)  # Pass the file-like object directly
         bulk_analysis[game.id] = analysis
 
         # Save the analysis results to the database
@@ -95,3 +113,17 @@ def bulk_analyze_view(request, player_id):
             )
 
     return JsonResponse({'status': 'success', 'analysis': bulk_analysis})
+
+def game_feedback_view(request, game_id):
+    game = get_object_or_404(Game, id=game_id)
+    analyses = GameAnalysis.objects.filter(game=game).order_by('id')
+    
+    # Convert analyses to a list of dicts
+    analysis_data = [
+        {'move': a.move, 'score': a.score, 'depth': a.depth} 
+        for a in analyses
+    ]
+    
+    feedback = generate_feedback(analysis_data, game.is_white)
+    return JsonResponse({'feedback': feedback})
+

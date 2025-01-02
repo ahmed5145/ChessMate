@@ -20,9 +20,12 @@ class Game(models.Model):
     ]
     result = models.CharField(max_length=10, choices=RESULT_CHOICES)
     pgn = models.TextField()
-
+    is_white = models.BooleanField()
+    opening_name = models.CharField(max_length=200, blank=True, null=True)
+    
     def __str__(self):
-        return f"Game vs {self.opponent} on {self.played_at}"
+        color = "White" if self.is_white else "Black"
+        return f"Game played with {color} pieces vs {self.opponent} on {self.played_at}"
 
 class GameAnalysis(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='analyses')
