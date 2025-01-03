@@ -9,3 +9,5 @@ db.sqlite3
 migrations/
 
 node_modules/
+
+.env

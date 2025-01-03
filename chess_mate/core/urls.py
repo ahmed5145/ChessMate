@@ -8,7 +8,8 @@ urlpatterns = [
     path('feedback/<int:game_id>/', views.game_feedback_view, name='game_feedback'),
     path("api/register/", views.register_view, name="register"),
     path("api/login/", views.login_view, name="login"),
-    path("api/games/", views.games_view, name="games"),
+    path("api/dashboard/", views.user_games_view, name="dashboard"),  # User-specific games
+    path("api/games/", views.games_view, name="games"), # All games endpoint
     path("api/game/<int:game_id>/analysis/", views.game_analysis_view, name="game_analysis"),
 
 ]

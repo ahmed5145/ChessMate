@@ -1,11 +1,11 @@
 from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 import requests
-from .models import Player, Game, GameAnalysis
+from .models import Player, Game, GameAnalysis, Profile
 from .utils import analyze_game, generate_feedback
 from io import StringIO
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import permission_classes
+from rest_framework.decorators import api_view, permission_classes
 
 # Base URL for Chess.com API
 BASE_URL = "https://api.chess.com/pub/player"
@@ -46,33 +46,28 @@ def fetch_games_from_archive_by_type(archive_url, game_type):
         print(f"Failed to fetch games - Status: {response.status_code}")
     return []
 
-# View to fetch and return games for a specific username and game type
-def fetch_games(request, username, game_type):
-    player, _ = Player.objects.get_or_create(username=username)
-    archives = fetch_archives(username)
-    all_games = []
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def fetch_games(request):
+    """
+    Fetch games from a chess API and save them to the database for the logged-in user.
+    """
+    user = request.user
+    games_data = request.data.get("games", [])
 
-    if archives:
-        for archive in archives:
-            games = fetch_games_from_archive_by_type(archive, game_type)
-            for game_data in games:
-                is_white = game_data['white']['username'] == username
-                game, created = Game.objects.get_or_create(
-                    player=player,
-                    game_url=game_data['url'],
-                    played_at=game_data['end_time'],  # Adjust time format
-                    opponent=game_data['black']['username'] if is_white else game_data['white']['username'],
-                    result=game_data['white']['result'] if is_white else game_data['black']['result'],
-                    pgn=game_data['pgn'],
-                    is_white=is_white
-                )
-                if created:
-                    all_games.append(game_data)
-    
-    if all_games:
-        return JsonResponse({"games": all_games}, safe=False)
-    else:
-        return JsonResponse({"message": f"No {game_type} games found for the specified user."}, status=404)
+    for game_data in games_data:
+        Game.objects.create(
+            player=user,
+            opponent=game_data["opponent"],
+            result=game_data["result"],
+            played_at=game_data["played_at"],
+            opening_name=game_data.get("opening_name"),
+            pgn=game_data.get("pgn"),
+            game_url=game_data.get("game_url"),
+            is_white=game_data["is_white"],
+        )
+
+    return Response({"message": "Games successfully fetched and saved!"}, status=status.HTTP_201_CREATED)
 
 def analyze_game_view(request, game_id):
     game = get_object_or_404(Game, id=game_id)
@@ -137,6 +132,12 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import status
+from .validators import validate_password_complexity
+from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
+from django_ratelimit.decorators import ratelimit
+from django.db import transaction
+
 
 # Helper function to generate tokens for a user
 def get_tokens_for_user(user):
@@ -162,9 +163,34 @@ def register_view(request):
     if User.objects.filter(email=email).exists():
         return Response({"error": "Email already in use."}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.create_user(username=username, email=email, password=password)
-    return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
+    # Ensure password complexity is validated
+    try:
+        validate_password_complexity(password)
+    except ValidationError as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    try:
+        with transaction.atomic():
+            user = User.objects.create_user(username=username, email=email, password=password)
+            Profile.objects.create(user=user)
+        send_confirmation_email(user)
+    except ValidationError:
+        return Response({"error": "Failed to register user due to validation error."}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception:
+        return Response({"error": "Failed to register user due to an unexpected error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({"message": "User registered successfully! Please confirm your email."},
+                    status=status.HTTP_201_CREATED)
+
+# Helper function to send a confirmation email
+def send_confirmation_email(user):
+    subject = "Confirm Your Email"
+    message = f"Hi {user.username},\n\nPlease confirm your email address to activate your account."
+    recipient_list = [user.email]
+    send_mail(subject, message, "your-email@example.com", recipient_list)
+
+
+@ratelimit(key="ip", rate="5/m", method="POST", block=True)
 @api_view(["POST"])
 def login_view(request):
     """
@@ -207,3 +233,64 @@ def game_analysis_view(request, game_id):
         {"move": "Nf3", "score": 0.5},
     ]
     return JsonResponse({"game_id": game_id, "analysis": analysis})
+
+#================================== Dashboard ==================================
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def dashboard_view(request):
+    """
+    Return user-specific games
+    """
+    user = request.user
+    games = Game.objects.filter(user=user)
+    games_data = [
+        {
+            "id": game.id,
+            "title": game.title,
+            "result": game.result,
+            "played_at": game.played_at,
+        }
+        for game in games
+    ]
+    return Response({"games": games_data}, status=status.HTTP_200_OK)
+
+
+from django.db.models import Q
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def user_games_view(request):
+    """
+    Fetch games specific to the logged-in user
+    """
+    user = request.user  # Extract the logged-in user
+    games = Game.objects.filter(player=user).order_by("-played_at")  # Filter games by the player field
+    games_data = [
+        {
+            "id": game.id,
+            "opponent": game.opponent,
+            "result": game.result,
+            "played_at": game.played_at,
+            "opening_name": game.opening_name,
+        }
+        for game in games
+    ]
+    return Response({"games": games_data}, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+def all_games_view(request):
+    """
+    Fetch all available games (generic endpoint)
+    """
+    games = Game.objects.all().order_by("-played_at")  # Fetch all games
+    games_data = [
+        {
+            "id": game.id,
+            "title": game.title,
+            "result": game.result,
+            "played_at": game.played_at,
+        }
+        for game in games
+    ]
+    return Response({"games": games_data}, status=status.HTTP_200_OK)

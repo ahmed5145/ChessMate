@@ -1,36 +1,47 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
 const Dashboard = () => {
   const [games, setGames] = useState([]);
+  const [message, setMessage] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/games/")
-      .then((res) => res.json())
-      .then((data) => setGames(data.games))
-      .catch((error) => console.error("Error fetching games:", error));
-  }, []);
+    const fetchUserGames = async () => {
+      const tokens = JSON.parse(localStorage.getItem("tokens"));
+      if (!tokens) {
+        navigate("/"); // Redirect to login if no tokens
+        return;
+      }
+      try {
+        const response = await axios.get("http://127.0.0.1:8000/api/dashboard/", {
+          headers: { Authorization: `Bearer ${tokens.access}` },
+        });
+        setGames(response.data.games);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          localStorage.removeItem("tokens");
+          navigate("/"); // Redirect to login on unauthorized
+        } else {
+          setMessage("Failed to load games.");
+        }
+      }
+    };
+    fetchUserGames();
+  }, [navigate]);
 
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
-      <table className="w-full mt-4 border border-gray-300">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className="px-4 py-2">Game ID</th>
-            <th className="px-4 py-2">Opponent</th>
-            <th className="px-4 py-2">Result</th>
-          </tr>
-        </thead>
-        <tbody>
-          {games.map((game) => (
-            <tr key={game.id}>
-              <td className="px-4 py-2 border">{game.id}</td>
-              <td className="px-4 py-2 border">{game.opponent}</td>
-              <td className="px-4 py-2 border">{game.result}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <h2>Your Games</h2>
+      {message && <p>{message}</p>}
+      <ul>
+        {games.map((game) => (
+          <li key={game.id}>
+            {game.title} - {game.result} ({new Date(game.played_at).toLocaleDateString()})
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };

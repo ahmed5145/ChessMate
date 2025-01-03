@@ -2,3 +2,6 @@ django
 requests
 django-cors-headers
 python-chess
+pillow
+django-ratelimit
+python-dotenv
