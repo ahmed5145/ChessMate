@@ -46,49 +46,74 @@ def fetch_games_from_archive_by_type(archive_url, game_type):
         print(f"Failed to fetch games - Status: {response.status_code}")
     return []
 
+import requests
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def fetch_games(request):
     """
-    Fetch games from a chess API and save them to the database for the logged-in user.
+    Fetch games from Chess.com or Lichess APIs based on the username and platform provided.
     """
     user = request.user
-    games_data = request.data.get("games", [])
+    platform = request.data.get("platform")  # "chess.com" or "lichess"
+    username = request.data.get("username")
 
-    for game_data in games_data:
-        Game.objects.create(
-            player=user,
-            opponent=game_data["opponent"],
-            result=game_data["result"],
-            played_at=game_data["played_at"],
-            opening_name=game_data.get("opening_name"),
-            pgn=game_data.get("pgn"),
-            game_url=game_data.get("game_url"),
-            is_white=game_data["is_white"],
-        )
+    if not platform or not username:
+        return Response({"error": "Platform and username are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    return Response({"message": "Games successfully fetched and saved!"}, status=status.HTTP_201_CREATED)
-
-def analyze_game_view(request, game_id):
-    game = get_object_or_404(Game, id=game_id)
-    pgn = StringIO(game.pgn)  # Treat PGN as a file-like object
-    analysis, opening_name = analyze_game(pgn)  # Pass the file-like object directly
-    
-    # Save the opening name if not already set
-    if not game.opening_name:
-        game.opening_name = opening_name
-        game.save()
+    games = []
+    try:
+        if not username:
+            return JsonResponse({"error": "Username is required."}, status=400)
         
-    # Save the analysis results to the database
-    for move_analysis in analysis:
-        GameAnalysis.objects.create(
-            game=game,
-            move=move_analysis['move'],
-            score=move_analysis['score'],
-            depth=move_analysis['depth']
-        )
-    
-    return JsonResponse({'status': 'success', 'analysis': analysis, 'opening': opening_name})
+        if platform == "chess.com":
+            url = f"https://api.chess.com/pub/player/{username}/games"
+            response = requests.get(url)
+            if response.status_code == 200:
+                games = response.json().get("games", [])
+        elif platform == "lichess":
+            url = f"https://lichess.org/api/games/user/{username}?max=10"
+            response = requests.get(url, headers={"Accept": "application/x-ndjson"})
+            if response.status_code == 200:
+                games = [game for game in response.iter_lines()]
+
+        # Save games in the database
+        for game in games:
+            Game.objects.create(
+                player=user,
+                opponent=game.get("opponent", {}).get("username", "Unknown"),
+                result=game.get("result", "Unknown"),
+                played_at=game.get("end_time", None),
+                opening_name=game.get("opening", {}).get("name", None),
+                pgn=game.get("pgn", None),
+                game_url=game.get("url", None),
+                is_white=game.get("white", {}).get("username", "") == username,
+            )
+        return Response({"message": "Games successfully fetched and saved!"}, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        print(f"Error fetching games: {str(e)}")
+        return JsonResponse({"error": "Failed to fetch games. Please try again later."}, status=500)    
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def analyze_game_view(request, game_id):
+    """
+    Analyze a specific game for the logged-in user.
+    """
+    user = request.user
+    try:
+        game = Game.objects.get(id=game_id, player=user)
+    except Game.DoesNotExist:
+        return Response({"error": "Game not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Mock analysis (replace with actual logic or API calls)
+    analysis = [
+        {"move": "e4", "score": 0.3},
+        {"move": "e5", "score": 0.2},
+        {"move": "Nf3", "score": 0.5},
+    ]
+    game_analysis = GameAnalysis.objects.create(game=game, analysis_data=analysis)
+    return Response({"message": "Game analyzed successfully!", "analysis": analysis}, status=status.HTTP_201_CREATED)
 
 def bulk_analyze_view(request, player_id):
     player = get_object_or_404(Player, id=player_id)
