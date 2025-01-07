@@ -33,7 +33,8 @@ const Dashboard = () => {
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
-      <FetchGames />
+      {/* Pass fetchGames func to FetchGames component */}
+      <FetchGames onGamesFetched={fetchGames} />
       <h2 className="text-xl font-semibold mt-6 mb-4">Your Games</h2>
       {loading ? (
         <p>Loading games...</p>

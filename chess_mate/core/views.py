@@ -7,6 +7,8 @@ from io import StringIO
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.models import User
+import ndjson
 
 # Base URL for Chess.com API
 BASE_URL = "https://api.chess.com/pub/player"
@@ -47,7 +49,6 @@ def fetch_games_from_archive_by_type(archive_url, game_type):
         print(f"Failed to fetch games - Status: {response.status_code}")
     return []
 
-import ndjson
 
 @csrf_exempt
 @api_view(["POST"])
@@ -57,22 +58,21 @@ def fetch_games(request):
     Fetch games from Chess.com or Lichess APIs based on the username and platform provided.
     """
     user = request.user
-    platform = request.data.get("platform")  # "chess.com" or "lichess"
-    username = request.data.get("username")
+    data = request.data
+    
+    fetched_data = data.get("username")
+    username = fetched_data["username"]
+    platform = fetched_data["platform"]
 
     if not platform or not username:
         return Response({"error": "Platform and username are required."}, status=status.HTTP_400_BAD_REQUEST)
 
     games = []
     try:
-        if not username:
-            return JsonResponse({"error": "Username is required."}, status=400)
-        
         if platform == "chess.com":
-            url = f"https://api.chess.com/pub/player/{username}/games"
-            response = requests.get(url)
-            response.raise_for_status()  # Raise HTTP errors
-            games = response.json().get("games", [])
+            archives = fetch_archives(username)
+            for archive_url in archives:
+                games.extend(fetch_games_from_archive_by_type(archive_url, "rapid"))  # Fetch rapid games as an example
         elif platform == "lichess":
             url = f"https://lichess.org/api/games/user/{username}?max=10"
             response = requests.get(url, headers={"Accept": "application/x-ndjson"})
@@ -98,6 +98,22 @@ def fetch_games(request):
     except Exception as e:
         print(f"Error fetching games: {str(e)}")
         return JsonResponse({"error": "Failed to fetch games. Please try again later."}, status=500)    
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated]) 
+def get_saved_games(request):
+    """
+    Retrieve saved games for the logged-in user.
+    """
+    user = request.user
+    if not user.is_authenticated:
+        return Response({"error": "User not authenticated."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    games = Game.objects.filter(player=user).values(
+        "opponent", "result", "played_at", "game_url"
+    )
+    return Response(games, status=status.HTTP_200_OK)
+
 
 @csrf_exempt
 @api_view(["POST"])
@@ -163,7 +179,6 @@ def game_feedback_view(request, game_id):
 
 
 #==================================Login Logic==================================
-from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
@@ -276,14 +291,6 @@ def login_view(request):
         return JsonResponse({"error": "Only POST method allowed"}, status=405)
 
 #================================== Testing Data ==================================
-def games_view(request):
-    games = [
-        {"id": 1, "opponent": "Player1", "result": "Win"},
-        {"id": 2, "opponent": "Player2", "result": "Loss"},
-        {"id": 3, "opponent": "Player3", "result": "Draw"},
-    ]
-    return JsonResponse({"games": games})
-
 def game_analysis_view(request, game_id):
     analysis = [
         {"move": "e4", "score": 0.3},
