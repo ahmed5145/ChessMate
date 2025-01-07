@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import axios from "axios";
+import { fetchExternalGames } from "../api";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -14,21 +14,11 @@ const FetchGames = () => {
     }
 
     try {
-      const response = await axios.post(
-        "/api/fetch-games/",
-        { username, platform },
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("access")}`,
-          },
-        }
-      );
-      toast.success(response.data.message || "Games fetched successfully!");
+      const response = await fetchExternalGames("api/fetch-games/", { username, platform }, { withCredentials: true });
+      toast.success(response.message || "Games fetched successfully!");
     } catch (error) {
       console.error("Error fetching games:", error);
-      toast.error(
-        error.response?.data?.error || "Failed to fetch games. Please try again."
-      );
+      toast.error(error.response?.data?.error || "Failed to fetch games. Please try again.");
     }
   };
 

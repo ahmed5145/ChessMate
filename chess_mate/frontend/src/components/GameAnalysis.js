@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
 import { useParams } from "react-router-dom";
+import { fetchGameAnalysis } from "../api";
 
 const GameAnalysis = () => {
   const { gameId } = useParams();
@@ -10,15 +10,11 @@ const GameAnalysis = () => {
   useEffect(() => {
     const fetchAnalysis = async () => {
       try {
-        const response = await axios.get(`/api/game/${gameId}/analysis/`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("access")}`,
-          },
-        });
-        setAnalysis(response.data.analysis);
-        setLoading(false);
+        const data = await fetchGameAnalysis(`api/game/${gameId}/analysis/`);
+        setAnalysis(data.analysis);
       } catch (error) {
         console.error("Error fetching analysis:", error);
+      } finally {
         setLoading(false);
       }
     };

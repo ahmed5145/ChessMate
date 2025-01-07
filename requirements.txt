@@ -5,3 +5,4 @@ python-chess
 pillow
 django-ratelimit
 python-dotenv
+ndjson

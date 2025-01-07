@@ -6,6 +6,7 @@ from .utils import analyze_game, generate_feedback
 from io import StringIO
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
+from django.views.decorators.csrf import csrf_exempt
 
 # Base URL for Chess.com API
 BASE_URL = "https://api.chess.com/pub/player"
@@ -46,8 +47,9 @@ def fetch_games_from_archive_by_type(archive_url, game_type):
         print(f"Failed to fetch games - Status: {response.status_code}")
     return []
 
-import requests
+import ndjson
 
+@csrf_exempt
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def fetch_games(request):
@@ -69,13 +71,14 @@ def fetch_games(request):
         if platform == "chess.com":
             url = f"https://api.chess.com/pub/player/{username}/games"
             response = requests.get(url)
-            if response.status_code == 200:
-                games = response.json().get("games", [])
+            response.raise_for_status()  # Raise HTTP errors
+            games = response.json().get("games", [])
         elif platform == "lichess":
             url = f"https://lichess.org/api/games/user/{username}?max=10"
             response = requests.get(url, headers={"Accept": "application/x-ndjson"})
-            if response.status_code == 200:
-                games = [game for game in response.iter_lines()]
+            response.raise_for_status()  # Raise HTTP errors
+            ndjson_parser = ndjson.Reader(response.iter_lines())
+            games = list(ndjson_parser)
 
         # Save games in the database
         for game in games:
@@ -90,10 +93,13 @@ def fetch_games(request):
                 is_white=game.get("white", {}).get("username", "") == username,
             )
         return Response({"message": "Games successfully fetched and saved!"}, status=status.HTTP_201_CREATED)
+    except requests.exceptions.HTTPError as http_err:
+        return Response({"error": f"HTTP error: {http_err}"}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         print(f"Error fetching games: {str(e)}")
         return JsonResponse({"error": "Failed to fetch games. Please try again later."}, status=500)    
 
+@csrf_exempt
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def analyze_game_view(request, game_id):
@@ -115,6 +121,9 @@ def analyze_game_view(request, game_id):
     game_analysis = GameAnalysis.objects.create(game=game, analysis_data=analysis)
     return Response({"message": "Game analyzed successfully!", "analysis": analysis}, status=status.HTTP_201_CREATED)
 
+@csrf_exempt
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def bulk_analyze_view(request, player_id):
     player = get_object_or_404(Player, id=player_id)
     games = player.games.all()
@@ -136,6 +145,9 @@ def bulk_analyze_view(request, player_id):
 
     return JsonResponse({'status': 'success', 'analysis': bulk_analysis})
 
+@csrf_exempt  # Add this decorato
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def game_feedback_view(request, game_id):
     game = get_object_or_404(Game, id=game_id)
     analyses = GameAnalysis.objects.filter(game=game).order_by('id')
@@ -162,6 +174,7 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django_ratelimit.decorators import ratelimit
 from django.db import transaction
+import json
 
 
 # Helper function to generate tokens for a user
@@ -172,6 +185,7 @@ def get_tokens_for_user(user):
         "access": str(refresh.access_token),
     }
 
+@csrf_exempt
 @api_view(["POST"])
 def register_view(request):
     """
@@ -188,6 +202,9 @@ def register_view(request):
     if User.objects.filter(email=email).exists():
         return Response({"error": "Email already in use."}, status=status.HTTP_400_BAD_REQUEST)
 
+    if User.objects.filter(username=username).exists():
+        return Response({"error": "Username already in use."}, status=status.HTTP_400_BAD_REQUEST)
+
     # Ensure password complexity is validated
     try:
         validate_password_complexity(password)
@@ -197,11 +214,13 @@ def register_view(request):
     try:
         with transaction.atomic():
             user = User.objects.create_user(username=username, email=email, password=password)
-            Profile.objects.create(user=user)
+            # Ensure Profile is created only if it does not exist
+            Profile.objects.get_or_create(user=user)
         send_confirmation_email(user)
-    except ValidationError:
-        return Response({"error": "Failed to register user due to validation error."}, status=status.HTTP_400_BAD_REQUEST)
-    except Exception:
+    except ValidationError as e:
+        return Response({"error": f"Failed to register user due to validation error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        print(f"Unexpected error during registration: {str(e)}")
         return Response({"error": "Failed to register user due to an unexpected error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     return Response({"message": "User registered successfully! Please confirm your email."},
@@ -212,35 +231,49 @@ def send_confirmation_email(user):
     subject = "Confirm Your Email"
     message = f"Hi {user.username},\n\nPlease confirm your email address to activate your account."
     recipient_list = [user.email]
-    send_mail(subject, message, "your-email@example.com", recipient_list)
-
-
-@ratelimit(key="ip", rate="5/m", method="POST", block=True)
-@api_view(["POST"])
-def login_view(request):
-    """
-    Handle user login
-    """
-    data = request.data
-    email = data.get("email")
-    password = data.get("password")
-
-    if not email or not password:
-        return Response({"error": "Both email and password are required."}, status=status.HTTP_400_BAD_REQUEST)
-
     try:
-        user = User.objects.get(email=email)
-    except User.DoesNotExist:
-        return Response({"error": "Invalid email or password."}, status=status.HTTP_400_BAD_REQUEST)
-
-    user = authenticate(username=user.username, password=password)
-    if user is None:
-        return Response({"error": "Invalid email or password."}, status=status.HTTP_400_BAD_REQUEST)
-
-    tokens = get_tokens_for_user(user)
-    return Response({"message": "Login successful!", "tokens": tokens}, status=status.HTTP_200_OK)
+        send_mail(subject, message, "your-email@example.com", recipient_list)
+    except Exception as e:
+        print(f"Error sending confirmation email: {str(e)}")  # Log the specific error
+        raise ValidationError("Failed to send confirmation email. Please check your email settings and try again.")
 
 
+@csrf_exempt
+@ratelimit(key="ip", rate="5/m", method="POST", block=True)
+def login_view(request):
+    if request.method == "POST":
+        try:
+            # Parse JSON payload
+            data = json.loads(request.body.decode('utf-8'))  # Decode the request body
+
+            # Ensure data is a dictionary
+            if not isinstance(data, dict):
+                return JsonResponse({"error": "Invalid JSON payload"}, status=400)
+
+            # Extract fields
+            email = data.get("email")
+            password = data.get("password")
+
+            if not email or not password:
+                return JsonResponse({"error": "Both email and password are required."}, status=400)
+
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return JsonResponse({"error": "Invalid email or password."}, status=400)
+
+            user = authenticate(username=user.username, password=password)
+            if user is None:
+                return JsonResponse({"error": "Invalid email or password."}, status=400)
+
+            tokens = get_tokens_for_user(user)
+            return JsonResponse({"message": "Login successful!", "tokens": tokens}, status=200)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON payload"}, status=400)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    else:
+        return JsonResponse({"error": "Only POST method allowed"}, status=405)
 
 #================================== Testing Data ==================================
 def games_view(request):
@@ -260,6 +293,7 @@ def game_analysis_view(request, game_id):
     return JsonResponse({"game_id": game_id, "analysis": analysis})
 
 #================================== Dashboard ==================================
+@csrf_exempt
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def dashboard_view(request):
@@ -282,6 +316,7 @@ def dashboard_view(request):
 
 from django.db.models import Q
 
+@csrf_exempt
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def user_games_view(request):
@@ -303,6 +338,7 @@ def user_games_view(request):
     return Response({"games": games_data}, status=status.HTTP_200_OK)
 
 
+@csrf_exempt
 @api_view(["GET"])
 def all_games_view(request):
     """

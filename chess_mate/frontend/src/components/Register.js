@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import { registerUser } from "../api";
 
 const Register = () => {
   const [username, setUsername] = useState("");
@@ -13,12 +13,8 @@ const Register = () => {
     e.preventDefault();
     setMessage("Submitting...");
     try {
-      const response = await axios.post("http://127.0.0.1:8000/api/register/", {
-        username,
-        email,
-        password,
-      });
-      setMessage(response.data.message);
+      const response = await registerUser({ username, email, password }, { withCredentials: true });
+      setMessage(response.message);
       navigate("/");
     } catch (error) {
       setMessage(error.response?.data?.error || "An error occurred");

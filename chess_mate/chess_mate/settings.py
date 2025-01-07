@@ -135,6 +135,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 
+#CSRF settings
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+]
+
 # Path to Stockfish executable
 STOCKFISH_PATH = "C:/Users/PCAdmin/Downloads/stockfish/windows-x86-64-avx2/stockfish/stockfish-windows-x86-64-avx2.exe"
 
@@ -152,8 +157,12 @@ EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "your-email@example.com"
+
+# Load environment variables
 load_dotenv()
 
-EMAIL_HOST_USER = os.getenv("MAIL_EMAIL")
-EMAIL_HOST_PASSWORD = os.getenv("MAIL_PASS")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+
+if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
+    raise ValueError("Email configuration is not set properly in environment variables.")

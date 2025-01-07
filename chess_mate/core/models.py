@@ -65,3 +65,4 @@ class GameAnalysis(models.Model):
             models.Index(fields=['game']),
             models.Index(fields=['move']),
         ]
+    objects = models.Manager()
