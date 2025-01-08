@@ -9,6 +9,8 @@ from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 import ndjson
+from datetime import datetime
+from django.utils.timezone import make_aware, get_current_timezone
 
 # Base URL for Chess.com API
 BASE_URL = "https://api.chess.com/pub/player"
@@ -82,16 +84,32 @@ def fetch_games(request):
 
         # Save games in the database
         for game in games:
-            Game.objects.create(
-                player=user,
-                opponent=game.get("opponent", {}).get("username", "Unknown"),
-                result=game.get("result", "Unknown"),
-                played_at=game.get("end_time", None),
-                opening_name=game.get("opening", {}).get("name", None),
-                pgn=game.get("pgn", None),
-                game_url=game.get("url", None),
-                is_white=game.get("white", {}).get("username", "") == username,
-            )
+            try:
+                end_time = game.get("end_time", None)
+                played_at = None
+                if isinstance(end_time, int):
+                    naive_datetime = datetime.fromtimestamp(end_time)
+                    played_at = make_aware(naive_datetime, timezone=get_current_timezone())
+                elif isinstance(end_time, str):
+                    naive_datetime = datetime.fromisoformat(end_time)
+                    played_at = make_aware(naive_datetime, timezone=get_current_timezone())
+                    
+                game_url = game.get("url", None)
+                if not Game.objects.filter(game_url=game_url).exists():
+                    Game.objects.create(
+                        player=user,
+                        opponent=game.get("opponent", {}).get("username", "Unknown"),
+                        result=game.get("result", "Unknown"),
+                        played_at=played_at,
+                        opening_name=game.get("opening", {}).get("name", None),
+                        pgn=game.get("pgn", None),
+                        game_url=game_url,
+                        is_white=game.get("white", {}).get("username", "") == username,
+                    )
+                else:
+                    print(f"Game with URL {game_url} already exists. Skipping.")
+            except Exception as e:
+                print(f"Error saving game: {str(e)}")
         return Response({"message": "Games successfully fetched and saved!"}, status=status.HTTP_201_CREATED)
     except requests.exceptions.HTTPError as http_err:
         return Response({"error": f"HTTP error: {http_err}"}, status=status.HTTP_400_BAD_REQUEST)
