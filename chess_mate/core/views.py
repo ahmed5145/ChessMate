@@ -61,10 +61,8 @@ def fetch_games(request):
     """
     user = request.user
     data = request.data
-    
-    fetched_data = data.get("username")
-    username = fetched_data["username"]
-    platform = fetched_data["platform"]
+    platform = data.get("platform")
+    username = data.get("username")
 
     if not platform or not username:
         return Response({"error": "Platform and username are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -95,17 +93,42 @@ def fetch_games(request):
                     played_at = make_aware(naive_datetime, timezone=get_current_timezone())
                     
                 game_url = game.get("url", None)
+                
+                white_player = game.get("white", {}).get("username", "").lower()
+                black_player = game.get("black", {}).get("username", "").lower()
+                
+                is_white = username.lower() == white_player
+                if not is_white and username.lower() != black_player:
+                    print(f"Username {username} does not match white or black player. Skipping game.")
+                    continue
+                
+                if is_white:
+                    result = game.get("white", {}).get("result", "unknown")
+                else:
+                    result = game.get("black", {}).get("result", "unknown")
+                
+                if result == "win":
+                    final_result = "Win"
+                elif result in ["checkmated", "timeout"]:
+                    final_result = "Loss"
+                else:
+                    final_result = "Draw"
+                    
+                opponent = black_player if is_white else white_player
+
                 if not Game.objects.filter(game_url=game_url).exists():
+                    # Save the game
                     Game.objects.create(
                         player=user,
-                        opponent=game.get("opponent", {}).get("username", "Unknown"),
-                        result=game.get("result", "Unknown"),
+                        opponent=opponent or "Unknown",
+                        result=final_result,
                         played_at=played_at,
                         opening_name=game.get("opening", {}).get("name", None),
                         pgn=game.get("pgn", None),
                         game_url=game_url,
-                        is_white=game.get("white", {}).get("username", "") == username,
+                        is_white=is_white,
                     )
+
                 else:
                     print(f"Game with URL {game_url} already exists. Skipping.")
             except Exception as e:
@@ -357,6 +380,7 @@ def user_games_view(request):
             "result": game.result,
             "played_at": game.played_at,
             "opening_name": game.opening_name,
+            "is_white": game.is_white,
         }
         for game in games
     ]

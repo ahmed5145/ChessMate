@@ -1,12 +1,11 @@
 import React, { useState } from "react";
-import { fetchExternalGames, fetchAllGames } from "../api";
+import { fetchExternalGames } from "../api";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-const FetchGames = (onGamesFetched) => {
+const FetchGames = ({ onGamesFetched }) => {
   const [username, setUsername] = useState("");
   const [platform, setPlatform] = useState("chess.com");
-  const [games, setGames] = useState([]); // State to hold fetched games
   const [loading, setLoading] = useState(false);
 
   const handleFetchGames = async () => {
@@ -18,28 +17,12 @@ const FetchGames = (onGamesFetched) => {
     }
 
     try {
-      const response = await fetchExternalGames(
-        "api/fetch-games/",
-        { username, platform },
-        { withCredentials: true }
-      );
-
-      toast.success(response.message || "Games fetched successfully!");
-
-      // Notify parent component about the fetch
-      if (onGamesFetched) {
-        onGamesFetched();
-      }
-
-      // Fetch games from the backend after saving
-      const res = await fetchAllGames("api/games/");
-      const data = await res.json();
-      setGames(data); // Update games state with fetched games
+      await fetchExternalGames(platform, username);
+      toast.success("Games fetched successfully!");
+      onGamesFetched();
     } catch (error) {
       console.error("Error fetching games:", error);
-      toast.error(
-        error.response?.data?.error || "Failed to fetch games. Please try again."
-      );
+      toast.error("Failed to fetch games. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -71,46 +54,12 @@ const FetchGames = (onGamesFetched) => {
       <button
         onClick={handleFetchGames}
         disabled={loading}
-        className={`px-4 py-2 bg-indigo-600 text-white rounded-md ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
+        className={`px-4 py-2 bg-indigo-600 text-white rounded-md ${
+          loading ? "opacity-50 cursor-not-allowed" : ""
+        }`}
       >
         {loading ? "Fetching Games..." : "Fetch Games"}
       </button>
-
-      {/* Display fetched games */}
-      {games.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-lg font-semibold mb-2">Fetched Games:</h3>
-          <table className="table-auto border-collapse border border-gray-400 w-full">
-            <thead>
-              <tr>
-                <th className="border border-gray-300 px-4 py-2">Opponent</th>
-                <th className="border border-gray-300 px-4 py-2">Result</th>
-                <th className="border border-gray-300 px-4 py-2">Played At</th>
-                <th className="border border-gray-300 px-4 py-2">Game URL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {games.map((game, index) => (
-                <tr key={index}>
-                  <td className="border border-gray-300 px-4 py-2">{game.opponent}</td>
-                  <td className="border border-gray-300 px-4 py-2">{game.result}</td>
-                  <td className="border border-gray-300 px-4 py-2">{new Date(game.played_at).toLocaleString()}</td>
-                  <td className="border border-gray-300 px-4 py-2">
-                    <a
-                      href={game.game_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                    >
-                      View Game
-                    </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 };
