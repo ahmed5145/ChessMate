@@ -44,6 +44,9 @@ class Game(models.Model):
     pgn = models.TextField()
     is_white = models.BooleanField()
     opening_name = models.CharField(max_length=200, blank=True, null=True)
+
+    class DoesNotExist(Exception):
+        pass
     
     def __str__(self):
         color = "White" if self.is_white else "Black"
@@ -56,6 +59,7 @@ class GameAnalysis(models.Model):
     move = models.CharField(max_length=10)
     score = models.IntegerField()
     depth = models.IntegerField()
+    time_spent = models.FloatField(null=True, blank=True)
 
     def __str__(self):
         return f"Analysis for Game ID {self.game.id}"

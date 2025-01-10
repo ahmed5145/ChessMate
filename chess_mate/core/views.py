@@ -9,6 +9,10 @@ from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from .chess_services import ChessComService, LichessService, save_game
+from .game_analyzer import GameAnalyzer
+
+
+STOCKFISH_PATH = "/path/to/stockfish"
 
 def index(request):
     return render(request, "index.html")
@@ -97,62 +101,100 @@ def get_saved_games(request):
 @permission_classes([IsAuthenticated])
 def analyze_game_view(request, game_id):
     """
-    Analyze a specific game for the logged-in user.
+    Endpoint to analyze a specific game by its ID.
     """
-    user = request.user
     try:
-        game = Game.objects.get(id=game_id, player=user)
-    except Game.DoesNotExist:
-        return Response({"error": "Game not found."}, status=status.HTTP_404_NOT_FOUND)
+        user = request.user
+        depth = request.data.get("depth", 20)
 
-    # Mock analysis (replace with actual logic or API calls)
-    analysis = [
-        {"move": "e4", "score": 0.3},
-        {"move": "e5", "score": 0.2},
-        {"move": "Nf3", "score": 0.5},
-    ]
-    game_analysis = GameAnalysis.objects.create(game=game, analysis_data=analysis)
-    return Response({"message": "Game analyzed successfully!", "analysis": analysis}, status=status.HTTP_201_CREATED)
+        # Fetch the game from the database
+        game = Game.objects.filter(id=game_id, player=user).first()
+
+        if not game:
+            return JsonResponse({"error": "Game is missing."}, status=404)
+
+        # Initialize GameAnalyzer
+        analyzer = GameAnalyzer(stockfish_path=STOCKFISH_PATH)
+
+        # Perform analysis
+        try:
+            results = analyzer.analyze_games(game, depth=depth)
+            return Response({"message": "Game analyzed successfully!", "results": results}, status=200)
+        finally:
+            analyzer.close_engine()
+
+    except Game.DoesNotExist:
+        return JsonResponse({"error": "Game not found."}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
 
 @csrf_exempt
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def bulk_analyze_view(request, player_id):
-    player = get_object_or_404(Player, id=player_id)
-    games = player.games.all()
-    bulk_analysis = {}
+def analyze_batch_games_view(request):
+    """
+    Analyze a batch of games for the authenticated user.
+    """
+    user = request.user
+    depth = request.data.get("depth", 20)
 
-    for game in games:
-        pgn = StringIO(game.pgn)  # Treat PGN as a file-like object
-        analysis, _ = analyze_game(pgn)  # Pass the file-like object directly
-        bulk_analysis[game.id] = analysis
+    # Fetch games for the user
+    games = Game.objects.filter(player=user)
+    if not games.exists():
+        return Response({"error": "No games found for analysis."}, status=404)
 
-        # Save the analysis results to the database
-        for move_analysis in analysis:
-            GameAnalysis.objects.create(
-                game=game,
-                move=move_analysis['move'],
-                score=move_analysis['score'],
-                depth=move_analysis['depth']
-            )
+    analyzer = GameAnalyzer(STOCKFISH_PATH)
+    try:
+        results = analyzer.analyze_games(games, depth=depth)
+        return Response({"message": "Batch analysis completed!", "results": results}, status=200)
+    finally:
+        analyzer.close_engine()
 
-    return JsonResponse({'status': 'success', 'analysis': bulk_analysis})
-
-@csrf_exempt  # Add this decorato
+@csrf_exempt
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def game_feedback_view(request, game_id):
-    game = get_object_or_404(Game, id=game_id)
-    analyses = GameAnalysis.objects.filter(game=game).order_by('id')
+    user = request.user
+    game = Game.objects.filter(id=game_id, player=user).first()
+    if not game:
+        return Response({"error": "Game not found."}, status=404)
     
-    # Convert analyses to a list of dicts
-    analysis_data = [
-        {'move': a.move, 'score': a.score, 'depth': a.depth} 
-        for a in analyses
-    ]
+    game_analysis = GameAnalysis.objects.filter(game=game)
+    if not game_analysis.exists():
+        return Response({"error": "Analysis not found for this game."}, status=404)
     
-    feedback = generate_feedback(analysis_data, game.is_white)
-    return JsonResponse({'feedback': feedback})
+    analyzer = GameAnalyzer()
+    feedback = analyzer.generate_feedback(game_analysis)
+
+    return Response({"feedback": feedback}, status=200)
+
+@csrf_exempt
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def batch_feedback_view(request):
+    """
+    Generate and return feedback for a batch of games.
+    """
+    user = request.user
+    game_ids = request.data.get("game_ids", [])
+
+    games = Game.objects.filter(id__in=game_ids, player=user)
+    if not games.exists():
+        return Response({"error": "No valid games found."}, status=404)
+
+    analyzer = GameAnalyzer()
+    batch_feedback = {}
+
+    for game in games:
+        game_analysis = GameAnalysis.objects.filter(game=game)
+        if game_analysis.exists():
+            feedback = analyzer.generate_feedback(game_analysis)
+            batch_feedback[game.id] = feedback
+
+    return Response({"batch_feedback": batch_feedback}, status=200)
+
+
 
 
 #==================================Login Logic==================================

@@ -10,6 +10,10 @@ urlpatterns = [
     path("api/login/", views.login_view, name="login"),
     path("api/dashboard/", views.user_games_view, name="dashboard"),  # User-specific games
     path("api/games/", views.get_saved_games, name="get_saved_games"), # All games endpoint
-    path("api/game/<int:game_id>/analysis/", views.game_analysis_view, name="game_analysis"),
+    path("api/game/<int:game_id>/analysis/", views.analyze_game_view, name="analyze_game"),
+    path("api/games/batch-analyze/", views.analyze_batch_games_view, name="batch_analyze_games"),
+    path('api/feedback/<int:game_id>/', views.game_feedback_view, name='game_feedback'),
+    path('api/feedback/batch/', views.batch_feedback_view, name='batch_feedback'),
+
 
 ]
