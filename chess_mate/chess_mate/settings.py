@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -151,6 +152,11 @@ REST_FRAMEWORK = {
     ),
 }
 
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Set to 1 hour or your desired duration
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Set to 7 days or your desired duration
+    # ...other settings...
+}
 
 # Email Confirmation settings
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
