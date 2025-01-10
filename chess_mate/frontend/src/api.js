@@ -1,4 +1,3 @@
-// api.js
 import axios from "axios";
 
 // Set the base URL for API requests
@@ -56,10 +55,17 @@ export const fetchUserGames = async () => {
 };
 
 // Fetch games from an external platform
-export const fetchExternalGames = async (platform, username, gameType = "all") => {
+export const fetchExternalGames = async (platform, username, gameType) => {
   try {
-    const response = await api.post("/fetch-games/", { platform, username, game_type: gameType });
-    return response.data.message;
+    // Handle "all" game type by using "rapid" as default
+    const effectiveGameType = gameType === "all" ? "rapid" : gameType;
+    
+    const response = await api.post("/fetch-games/", {
+      platform,
+      username,
+      game_type: effectiveGameType
+    });
+    return response.data;
   } catch (error) {
     throw error.response ? error.response.data : error.message;
   }
@@ -89,13 +95,13 @@ export const fetchGameAnalysis = async (gameId) => {
 export const fetchAllGames = async () => {
   try {
     const response = await api.get("/games/");
-    return response.data.games;
+    return response.data;
   } catch (error) {
     throw error.response ? error.response.data : error.message;
   }
 };
 
-// Log out the user (optional token removal logic)
+// Log out the user
 export const logoutUser = () => {
   setAuthHeader(null);
 };

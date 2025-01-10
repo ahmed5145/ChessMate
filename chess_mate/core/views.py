@@ -8,49 +8,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
-import ndjson
-from datetime import datetime
-from django.utils.timezone import make_aware, get_current_timezone
+from .chess_services import ChessComService, LichessService, save_game
 
-# Base URL for Chess.com API
-BASE_URL = "https://api.chess.com/pub/player"
-
-# Homepage view
 def index(request):
-    return HttpResponse("Welcome to ChessMate!")
-
-# Function to fetch archives
-def fetch_archives(username):
-    headers = {
-        "User-Agent": "ChessMate/1.0 (your_email@example.com)"
-    }
-    url = f"{BASE_URL}/{username}/games/archives"
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        archives = response.json().get("archives", [])
-        print(f"Archives fetched: {archives}")
-        return archives
-    else:
-        print(f"Failed to fetch archives - Status: {response.status_code}")
-        return []
-
-# Function to fetch games from an archive by game type
-def fetch_games_from_archive_by_type(archive_url, game_type):
-    headers = {
-        "User-Agent": "ChessMate/1.0 (your_email@example.com)"
-    }
-    response = requests.get(archive_url, headers=headers)
-    if response.status_code == 200:
-        games = response.json().get("games", [])
-        filtered_games = [game for game in games if game.get("time_class") == game_type]
-        print(f"Games fetched: {len(filtered_games)} {game_type} games.")
-        return filtered_games
-    elif response.status_code == 403:
-        print("403 Forbidden: Ensure proper headers are included and access is allowed.")
-    else:
-        print(f"Failed to fetch games - Status: {response.status_code}")
-    return []
-
+    return render(request, "index.html")
 
 @csrf_exempt
 @api_view(["POST"])
@@ -72,81 +33,49 @@ def fetch_games(request):
                         status=status.HTTP_400_BAD_REQUEST)
 
     if not platform or not username:
-        return Response({"error": "Platform and username are required."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Platform and username are required."}, 
+                        status=status.HTTP_400_BAD_REQUEST)
 
-    games = []
     try:
+        # Fetch games based on platform
+        games = []
         if platform == "chess.com":
-            archives = fetch_archives(username)
-            for archive_url in archives:
-                games.extend(fetch_games_from_archive_by_type(archive_url, game_type))
-        elif platform == "lichess": #TODO: Debug Lichess API fetching and implement game_type-specific fetching logic
-            url = f"https://lichess.org/api/games/user/{username}?max=10"
-            response = requests.get(url, headers={"Accept": "application/x-ndjson"})
-            response.raise_for_status()  # Raise HTTP errors
-            ndjson_parser = ndjson.Reader(response.iter_lines())
-            games = list(ndjson_parser)
+            games = ChessComService.fetch_games(username, game_type)
+        elif platform == "lichess":
+            games = LichessService.fetch_games(username, game_type)
+        else:
+            return Response(
+                {"error": "Invalid platform. Use 'chess.com' or 'lichess'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Save games in the database
+        # Save fetched games
+        saved_count = 0
         for game in games:
-            try:
-                end_time = game.get("end_time", None)
-                played_at = None
-                if isinstance(end_time, int):
-                    naive_datetime = datetime.fromtimestamp(end_time)
-                    played_at = make_aware(naive_datetime, timezone=get_current_timezone())
-                elif isinstance(end_time, str):
-                    naive_datetime = datetime.fromisoformat(end_time)
-                    played_at = make_aware(naive_datetime, timezone=get_current_timezone())
-                    
-                game_url = game.get("url", None)
-                
-                white_player = game.get("white", {}).get("username", "").lower()
-                black_player = game.get("black", {}).get("username", "").lower()
-                
-                is_white = username.lower() == white_player
-                if not is_white and username.lower() != black_player:
-                    print(f"Username {username} does not match white or black player. Skipping game.")
-                    continue
-                
-                if is_white:
-                    result = game.get("white", {}).get("result", "unknown")
-                else:
-                    result = game.get("black", {}).get("result", "unknown")
-                
-                if result == "win":
-                    final_result = "Win"
-                elif result in ["checkmated", "timeout"]:
-                    final_result = "Loss"
-                else:
-                    final_result = "Draw"
-                    
-                opponent = black_player if is_white else white_player
+            if save_game(game, username, user, platform):
+                saved_count += 1
 
-                if not Game.objects.filter(game_url=game_url).exists():
-                    # Save the game
-                    Game.objects.create(
-                        player=user,
-                        opponent=opponent or "Unknown",
-                        result=final_result,
-                        played_at=played_at,
-                        opening_name=game.get("opening", {}).get("name", None),
-                        pgn=game.get("pgn", None),
-                        game_url=game_url,
-                        is_white=is_white,
-                    )
+        return Response(
+            {
+                "message": f"Successfully fetched and saved {saved_count} games!",
+                "total_games": len(games),
+                "saved_games": saved_count
+            },
+            status=status.HTTP_201_CREATED
+        )
 
-                else:
-                    print(f"Game with URL {game_url} already exists. Skipping.")
-            except Exception as e:
-                print(f"Error saving game: {str(e)}")
-        return Response({"message": "Games successfully fetched and saved!"}, status=status.HTTP_201_CREATED)
     except requests.exceptions.HTTPError as http_err:
-        return Response({"error": f"HTTP error: {http_err}"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": f"HTTP error: {str(http_err)}"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     except Exception as e:
         print(f"Error fetching games: {str(e)}")
-        return JsonResponse({"error": "Failed to fetch games. Please try again later."}, status=500)    
-
+        return Response(
+            {"error": "Failed to fetch games. Please try again later."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        
 @api_view(["GET"])
 @permission_classes([IsAuthenticated]) 
 def get_saved_games(request):
