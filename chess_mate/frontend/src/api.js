@@ -56,9 +56,9 @@ export const fetchUserGames = async () => {
 };
 
 // Fetch games from an external platform
-export const fetchExternalGames = async (platform, username) => {
+export const fetchExternalGames = async (platform, username, gameType = "all") => {
   try {
-    const response = await api.post("/fetch-games/", { platform, username });
+    const response = await api.post("/fetch-games/", { platform, username, game_type: gameType });
     return response.data.message;
   } catch (error) {
     throw error.response ? error.response.data : error.message;

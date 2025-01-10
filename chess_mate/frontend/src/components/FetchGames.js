@@ -6,6 +6,7 @@ import "react-toastify/dist/ReactToastify.css";
 const FetchGames = ({ onGamesFetched }) => {
   const [username, setUsername] = useState("");
   const [platform, setPlatform] = useState("chess.com");
+  const [gameType, setGameType] = useState("all"); // Default to "all"
   const [loading, setLoading] = useState(false);
 
   const handleFetchGames = async () => {
@@ -17,7 +18,7 @@ const FetchGames = ({ onGamesFetched }) => {
     }
 
     try {
-      await fetchExternalGames(platform, username);
+      await fetchExternalGames(platform, username, gameType);
       toast.success("Games fetched successfully!");
       onGamesFetched();
     } catch (error) {
@@ -49,6 +50,20 @@ const FetchGames = ({ onGamesFetched }) => {
         >
           <option value="chess.com">Chess.com</option>
           <option value="lichess">Lichess</option>
+        </select>
+      </div>
+      <div className="mb-4">
+        <label className="block text-sm font-medium">Game Type:</label>
+        <select
+          value={gameType}
+          onChange={(e) => setGameType(e.target.value)}
+          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm focus:ring focus:ring-indigo-500"
+        >
+          <option value="all">All</option>
+          <option value="blitz">Blitz</option>
+          <option value="bullet">Bullet</option>
+          <option value="rapid">Rapid</option>
+          <option value="classical">Classical</option>
         </select>
       </div>
       <button

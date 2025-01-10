@@ -63,6 +63,13 @@ def fetch_games(request):
     data = request.data
     platform = data.get("platform")
     username = data.get("username")
+    game_type = data.get("game_type", "rapid")
+    
+    # Validate game type
+    allowed_game_types = ["bullet", "blitz", "rapid", "classical"]
+    if game_type not in allowed_game_types:
+        return Response({"error": "Invalid game type. Allowed types: bullet, blitz, rapid, classical."},
+                        status=status.HTTP_400_BAD_REQUEST)
 
     if not platform or not username:
         return Response({"error": "Platform and username are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -72,8 +79,8 @@ def fetch_games(request):
         if platform == "chess.com":
             archives = fetch_archives(username)
             for archive_url in archives:
-                games.extend(fetch_games_from_archive_by_type(archive_url, "rapid"))  # Fetch rapid games as an example
-        elif platform == "lichess":
+                games.extend(fetch_games_from_archive_by_type(archive_url, game_type))
+        elif platform == "lichess": #TODO: Debug Lichess API fetching and implement game_type-specific fetching logic
             url = f"https://lichess.org/api/games/user/{username}?max=10"
             response = requests.get(url, headers={"Accept": "application/x-ndjson"})
             response.raise_for_status()  # Raise HTTP errors
