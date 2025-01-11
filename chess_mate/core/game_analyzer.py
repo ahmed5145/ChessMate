@@ -1,3 +1,9 @@
+"""
+This module provides functionality for analyzing chess games using the Stockfish engine.
+It includes classes and methods to analyze single or multiple games, save analysis results to the
+database, and generate feedback based on the analysis.
+"""
+
 import chess
 import chess.engine
 from .models import GameAnalysis, Game
@@ -9,7 +15,7 @@ class GameAnalyzer:
 
     def __init__(self, stockfish_path="/path/to/stockfish"):
         self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        
+
     def analyze_games(self, games, depth=20):
         """
         Analyze one or multiple games.
@@ -23,7 +29,7 @@ class GameAnalyzer:
         """
         if isinstance(games, Game):
             games = [games]
-        
+
         analysis_results = {}
         for game in games:
             if not game.pgn:
@@ -33,7 +39,6 @@ class GameAnalyzer:
             self.save_analysis_to_db(game, results)
             analysis_results[game.id] = results
         return analysis_results
-
 
     def _analyze_single_game(self, game_pgn, player_color="white", depth=20):
         """
@@ -49,7 +54,7 @@ class GameAnalyzer:
         game = chess.pgn.read_game(game_pgn.splitlines())
         if not game:
             raise ValueError("Invalid PGN format")
-        
+
         board = game.board()
         analysis_results = []
 
@@ -68,7 +73,7 @@ class GameAnalyzer:
             })
 
         return analysis_results
-    
+
     def save_analysis_to_db(self, game, analysis_results):
         """
         Save analysis results to the database.
@@ -84,7 +89,7 @@ class GameAnalyzer:
                 score=result["score"],
                 depth=result["depth"],
             )
-            
+
     def generate_feedback(self, game_analysis):
         """
         Generate comprehensive feedback based on the game analysis.
@@ -126,8 +131,9 @@ class GameAnalyzer:
             last_score = analysis.score
 
         # Consistency
-        feedback["consistency"]["average_score"] = sum(move_scores) / total_moves if total_moves else 0
-
+        feedback["consistency"]["average_score"] = (
+            sum(move_scores) / total_moves if total_moves else 0
+        )
         # Time management (extract from GameAnalysis if available)
         times = [analysis.time_spent for analysis in game_analysis if analysis.time_spent]
         if times:
@@ -154,7 +160,6 @@ class GameAnalyzer:
         }
 
         return feedback
-
 
     def close_engine(self):
         """Closes the Stockfish engine."""

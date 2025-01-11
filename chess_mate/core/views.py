@@ -1,15 +1,35 @@
+"""
+This module contains the views for the ChessMate application, including endpoints for fetching, 
+analyzing, and providing feedback on chess games, as well as user authentication and registration.
+"""
+
+# Standard library imports
+import json
+
+# Django imports
 from django.shortcuts import render
 from django.http import JsonResponse
-import requests
-from django.core.exceptions import ObjectDoesNotExist
-from .models import Game, GameAnalysis, Profile
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.core.mail import send_mail
+from django.db import transaction
+from django_ratelimit.decorators import ratelimit
+
+# Third-party imports
+import requests
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework_simplejwt.tokens import RefreshToken
+
+# Local application imports
+from .models import Game, GameAnalysis, Profile
 from .chess_services import ChessComService, LichessService, save_game
 from .game_analyzer import GameAnalyzer
-
+from .validators import validate_password_complexity
 
 STOCKFISH_PATH = "/path/to/stockfish"
 
@@ -31,16 +51,20 @@ def fetch_games(request):
     platform = data.get("platform")
     username = data.get("username")
     game_type = data.get("game_type", "rapid")
-    
+
     # Validate game type
     allowed_game_types = ["bullet", "blitz", "rapid", "classical"]
     if game_type not in allowed_game_types:
-        return Response({"error": "Invalid game type. Allowed types: bullet, blitz, rapid, classical."},
-                        status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Invalid game type. Allowed types: bullet, blitz, rapid, classical."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     if not platform or not username:
-        return Response({"error": "Platform and username are required."}, 
-                        status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Platform and username are required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     try:
         # Fetch games based on platform
@@ -81,9 +105,9 @@ def fetch_games(request):
             {"error": "Failed to fetch games. Please try again later."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        
+
 @api_view(["GET"])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAuthenticated])
 def get_saved_games(request):
     """
     Retrieve saved games for the logged-in user.
@@ -96,7 +120,6 @@ def get_saved_games(request):
         "opponent", "result", "played_at", "game_url"
     )
     return Response(games, status=status.HTTP_200_OK)
-
 
 @csrf_exempt
 @api_view(["POST"])
@@ -121,7 +144,8 @@ def analyze_game_view(request, game_id):
         # Perform analysis
         try:
             results = analyzer.analyze_games(game, depth=depth)
-            return Response({"message": "Game analyzed successfully!", "results": results}, status=200)
+            return Response({"message": "Game analyzed successfully!", "results": results},
+            status=200)
         finally:
             analyzer.close_engine()
 
@@ -129,7 +153,6 @@ def analyze_game_view(request, game_id):
         return JsonResponse({"error": "Game not found."}, status=404)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
-
 
 @csrf_exempt
 @api_view(["POST"])
@@ -164,11 +187,11 @@ def game_feedback_view(request, game_id):
     game = Game.objects.filter(id=game_id, player=user).first()
     if not game:
         return Response({"error": "Game not found."}, status=404)
-    
+
     game_analysis = GameAnalysis.objects.filter(game=game)
     if not game_analysis.exists():
         return Response({"error": "Analysis not found for this game."}, status=404)
-    
+
     analyzer = GameAnalyzer()
     feedback = analyzer.generate_feedback(game_analysis)
 
@@ -199,24 +222,13 @@ def batch_feedback_view(request):
 
     return Response({"batch_feedback": batch_feedback}, status=200)
 
-
-
-
 #==================================Login Logic==================================
-from django.contrib.auth import authenticate
-from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework import status
-from .validators import validate_password_complexity
-from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
-from django_ratelimit.decorators import ratelimit
-from django.db import transaction
-import json
-
 
 # Helper function to generate tokens for a user
 def get_tokens_for_user(user):
+    """
+    Generate JWT tokens for a given user.
+    """
     refresh = RefreshToken.for_user(user)
     return {
         "refresh": str(refresh),
@@ -256,16 +268,27 @@ def register_view(request):
             Profile.objects.get_or_create(user=user)
         send_confirmation_email(user)
     except ValidationError as e:
-        return Response({"error": f"Failed to register user due to validation error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": f"Failed to register user due to validation error: {str(e)}"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     except Exception as e:
         print(f"Unexpected error during registration: {str(e)}")
-        return Response({"error": "Failed to register user due to an unexpected error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": "Failed to register user due to an unexpected error."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
-    return Response({"message": "User registered successfully! Please confirm your email."},
-                    status=status.HTTP_201_CREATED)
+    return Response(
+        {"message": "User registered successfully! Please confirm your email."},
+        status=status.HTTP_201_CREATED
+    )
 
 # Helper function to send a confirmation email
 def send_confirmation_email(user):
+    """
+    Send a confirmation email to the newly registered user.
+    """
     subject = "Confirm Your Email"
     message = f"Hi {user.username},\n\nPlease confirm your email address to activate your account."
     recipient_list = [user.email]
@@ -273,8 +296,9 @@ def send_confirmation_email(user):
         send_mail(subject, message, "your-email@example.com", recipient_list)
     except Exception as e:
         print(f"Error sending confirmation email: {str(e)}")  # Log the specific error
-        raise ValidationError("Failed to send confirmation email. Please check your email settings and try again.") from e
-
+        raise ValidationError(
+            "Failed to send confirmation email. Please check your email settings and try again."
+        ) from e
 
 @csrf_exempt
 @ratelimit(key="ip", rate="5/m", method="POST", block=True)
@@ -316,6 +340,28 @@ def login_view(request):
     else:
         return JsonResponse({"error": "Only POST method allowed"}, status=405)
 
+@csrf_exempt
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def logout_view(request):
+    """
+    Handle user logout by blacklisting the refresh token.
+    """
+    try:
+        refresh_token = request.data.get("refresh_token")
+        if not refresh_token:
+            return Response({"error": "Refresh token is required."},
+            status=status.HTTP_400_BAD_REQUEST)
+        token = RefreshToken(refresh_token)
+        token.blacklist()
+        return Response({"message": "Logout successful!"},
+                        status=status.HTTP_200_OK)
+    except AttributeError:
+        return Response({"error": "Blacklisting is not enabled."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 #================================== Testing Data ==================================
 def game_analysis_view(request, game_id):
     """
@@ -349,9 +395,6 @@ def dashboard_view(request):
     ]
     return Response({"games": games_data}, status=status.HTTP_200_OK)
 
-
-from django.db.models import Q
-
 @csrf_exempt
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -360,7 +403,7 @@ def user_games_view(request):
     Fetch games specific to the logged-in user.
     """
     user = request.user  # Extract the logged-in user
-    games = Game.objects.filter(player=user).order_by("-played_at")  # Filter games by the player field
+    games = Game.objects.filter(player=user).order_by("-played_at")
     games_data = [
         {
             "id": game.id,

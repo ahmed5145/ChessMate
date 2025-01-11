@@ -21,6 +21,40 @@ const setAuthHeader = (token) => {
   }
 };
 
+// Helper function to check if the user is online
+const isUserOnline = () => {
+  return navigator.onLine;
+};
+
+// Helper function to remove tokens if they are expired and the user is not online
+const removeExpiredTokens = () => {
+  const accessToken = localStorage.getItem("access_token");
+  const refreshToken = localStorage.getItem("refresh_token");
+
+  if (accessToken) {
+    const decodedAccessToken = jwtDecode(accessToken);
+    const currentTime = Date.now() / 1000;
+
+    if (decodedAccessToken.exp < currentTime && !isUserOnline()) {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      setAuthHeader(null);
+    }
+  }
+
+  if (refreshToken) {
+    const decodedRefreshToken = jwtDecode(refreshToken);
+    const currentTime = Date.now() / 1000;
+
+    if (decodedRefreshToken.exp < currentTime && !isUserOnline()) {
+      localStorage.removeItem("refresh_token");
+    }
+  }
+};
+
+// Call removeExpiredTokens on script load
+removeExpiredTokens();
+
 // Refresh the access token
 export const refreshToken = async (refreshToken) => {
   try {
@@ -154,8 +188,18 @@ export const fetchAllGames = async () => {
 };
 
 // Log out the user
-export const logoutUser = () => {
-  setAuthHeader(null);
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
+export const logoutUser = async () => {
+  try {
+    const refreshToken = localStorage.getItem("refresh_token");
+    if (refreshToken) {
+      await api.post("/logout/", { refresh_token: refreshToken });
+    }
+  } catch (error) {
+    console.error("Error logging out:", error);
+  } finally {
+    setAuthHeader(null);
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("tokens");
+  }
 };

@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'corsheaders',
     "rest_framework",
     "rest_framework_simplejwt",
+    'rest_framework_simplejwt.token_blacklist',  # Add this line
 ]
 
 MIDDLEWARE = [
@@ -157,6 +158,8 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Set to 1 hour or your desired duration
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Set to 7 days or your desired duration
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ROTATE_REFRESH_TOKENS': True,
     # ...other settings...
 }
 
@@ -174,3 +177,18 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 
 if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
     raise ValueError("Email configuration is not set properly in environment variables.")
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+    },
+}

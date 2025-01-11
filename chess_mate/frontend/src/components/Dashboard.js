@@ -1,19 +1,20 @@
 import React, { useEffect, useState } from "react";
-import { analyzeSpecificGame, fetchUserGames } from "../api";
+import { analyzeSpecificGame, fetchUserGames, logoutUser } from "../api";
 import FetchGames from "./FetchGames";
-import { ChevronLeft, ChevronRight, Activity } from "lucide-react";
+import { ChevronLeft, ChevronRight, Activity, LogOut, Menu } from "lucide-react";
 
 const Dashboard = () => {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [menuOpen, setMenuOpen] = useState(false);
   const gamesPerPage = 10;
 
   const fetchGames = async () => {
     setLoading(true);
     try {
       const data = await fetchUserGames({ withCredentials: true });
-      setGames(data);
+      setGames(data || []);
     } catch (error) {
       console.error("Error fetching games:", error);
     } finally {
@@ -27,8 +28,8 @@ const Dashboard = () => {
 
   const indexOfLastGame = currentPage * gamesPerPage;
   const indexOfFirstGame = indexOfLastGame - gamesPerPage;
-  const currentGames = games.slice(indexOfFirstGame, indexOfLastGame);
-  const totalPages = Math.ceil(games.length / gamesPerPage);
+  const currentGames = games ? games.slice(indexOfFirstGame, indexOfLastGame) : [];
+  const totalPages = games ? Math.ceil(games.length / gamesPerPage) : 0;
 
   const getResultColor = (result) => {
     switch (result?.toLowerCase()) {
@@ -43,11 +44,36 @@ const Dashboard = () => {
     }
   };
 
+  const handleLogout = () => {
+    logoutUser();
+    window.location.href = "/";
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="sm:flex sm:items-center sm:justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Chess Games Dashboard</h1>
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            >
+              <Menu className="h-4 w-4 mr-1.5" />
+              Menu
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg">
+                <button
+                  onClick={handleLogout}
+                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  <LogOut className="h-4 w-4 mr-1.5 inline" />
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mt-8 bg-white rounded-lg shadow">
