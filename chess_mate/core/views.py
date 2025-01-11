@@ -1,9 +1,8 @@
-from django.shortcuts import render, get_object_or_404
-from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
+from django.http import JsonResponse
 import requests
-from .models import Player, Game, GameAnalysis, Profile
-from .utils import analyze_game, generate_feedback
-from io import StringIO
+from django.core.exceptions import ObjectDoesNotExist
+from .models import Game, GameAnalysis, Profile
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
@@ -15,6 +14,9 @@ from .game_analyzer import GameAnalyzer
 STOCKFISH_PATH = "/path/to/stockfish"
 
 def index(request):
+    """
+    Render the index page.
+    """
     return render(request, "index.html")
 
 @csrf_exempt
@@ -56,7 +58,7 @@ def fetch_games(request):
         # Save fetched games
         saved_count = 0
         for game in games:
-            if save_game(game, username, user, platform):
+            if save_game(game, username, user):
                 saved_count += 1
 
         return Response(
@@ -155,6 +157,9 @@ def analyze_batch_games_view(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def game_feedback_view(request, game_id):
+    """
+    Provide feedback for a specific game by its ID.
+    """
     user = request.user
     game = Game.objects.filter(id=game_id, player=user).first()
     if not game:
@@ -200,7 +205,6 @@ def batch_feedback_view(request):
 #==================================Login Logic==================================
 from django.contrib.auth import authenticate
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import status
 from .validators import validate_password_complexity
@@ -223,7 +227,7 @@ def get_tokens_for_user(user):
 @api_view(["POST"])
 def register_view(request):
     """
-    Handle user registration
+    Handle user registration.
     """
     data = request.data
     email = data.get("email")
@@ -269,12 +273,15 @@ def send_confirmation_email(user):
         send_mail(subject, message, "your-email@example.com", recipient_list)
     except Exception as e:
         print(f"Error sending confirmation email: {str(e)}")  # Log the specific error
-        raise ValidationError("Failed to send confirmation email. Please check your email settings and try again.")
+        raise ValidationError("Failed to send confirmation email. Please check your email settings and try again.") from e
 
 
 @csrf_exempt
 @ratelimit(key="ip", rate="5/m", method="POST", block=True)
 def login_view(request):
+    """
+    Handle user login.
+    """
     if request.method == "POST":
         try:
             # Parse JSON payload
@@ -293,7 +300,7 @@ def login_view(request):
 
             try:
                 user = User.objects.get(email=email)
-            except User.DoesNotExist:
+            except ObjectDoesNotExist:
                 return JsonResponse({"error": "Invalid email or password."}, status=400)
 
             user = authenticate(username=user.username, password=password)
@@ -311,6 +318,9 @@ def login_view(request):
 
 #================================== Testing Data ==================================
 def game_analysis_view(request, game_id):
+    """
+    Provide a mock analysis for a specific game by its ID.
+    """
     analysis = [
         {"move": "e4", "score": 0.3},
         {"move": "e5", "score": 0.2},
@@ -324,7 +334,7 @@ def game_analysis_view(request, game_id):
 @permission_classes([IsAuthenticated])
 def dashboard_view(request):
     """
-    Return user-specific games
+    Return user-specific games for the dashboard.
     """
     user = request.user
     games = Game.objects.filter(user=user)
@@ -347,7 +357,7 @@ from django.db.models import Q
 @permission_classes([IsAuthenticated])
 def user_games_view(request):
     """
-    Fetch games specific to the logged-in user
+    Fetch games specific to the logged-in user.
     """
     user = request.user  # Extract the logged-in user
     games = Game.objects.filter(player=user).order_by("-played_at")  # Filter games by the player field
@@ -369,7 +379,7 @@ def user_games_view(request):
 @api_view(["GET"])
 def all_games_view(request):
     """
-    Fetch all available games (generic endpoint)
+    Fetch all available games (generic endpoint).
     """
     games = Game.objects.all().order_by("-played_at")  # Fetch all games
     games_data = [

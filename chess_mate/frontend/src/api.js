@@ -1,5 +1,5 @@
 import axios from "axios";
-import { jwtDecode } from "jwt-decode"; // Correct the import statement
+import { jwtDecode } from "jwt-decode";
 
 // Set the base URL for API requests
 const API_BASE_URL = "http://localhost:8000/api"; // Update if needed for deployment

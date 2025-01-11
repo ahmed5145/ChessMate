@@ -9,11 +9,10 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
-from pathlib import Path
-from dotenv import load_dotenv
 import os
 from datetime import timedelta
+from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,7 +27,7 @@ SECRET_KEY = 'django-insecure-$cxqc=&&9xwbq%)0xd^!*s$u3_d&u61f-is2u=ffb6!cv@-dob
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS: list[str] = []
 
 
 # Application definition
@@ -142,7 +141,10 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # Path to Stockfish executable
-STOCKFISH_PATH = "C:/Users/PCAdmin/Downloads/stockfish/windows-x86-64-avx2/stockfish/stockfish-windows-x86-64-avx2.exe"
+STOCKFISH_PATH = (
+    "C:/Users/PCAdmin/Downloads/stockfish/windows-x86-64-avx2/"
+    "stockfish/stockfish-windows-x86-64-avx2.exe"
+)
 
 
 # REST Framework settings
