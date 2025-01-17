@@ -109,6 +109,11 @@ export const registerUser = async (userData) => {
 // Login a user
 export const loginUser = async (credentials) => {
   try {
+    // Remove existing tokens before attempting to login
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    setAuthHeader(null);
+
     const response = await api.post("/login/", credentials);
     const { access, refresh } = response.data.tokens;
     setAuthHeader(access); // Set the auth header for future requests

@@ -1,8 +1,14 @@
+"""
+This module provides services for interacting with external chess platforms such as Chess.com 
+and Lichess. It includes classes and methods to fetch game data, filter games by type, and 
+save game details to the database.
+"""
+
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from django.utils.timezone import make_aware, get_current_timezone
 import requests
-import ndjson
+import ndjson  # type: ignore
 
 from .models import Game
 
@@ -78,9 +84,9 @@ class LichessService:
         }
         headers = {"Accept": "application/x-ndjson"}
 
-        response = requests.get(url, 
-                                headers=headers, 
-                                params={k: str(v) for k, v in params.items()}, 
+        response = requests.get(url,
+                                headers=headers,
+                                params={k: str(v) for k, v in params.items()},
                                 timeout=10)
         response.raise_for_status()
 

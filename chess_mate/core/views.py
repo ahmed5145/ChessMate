@@ -5,6 +5,7 @@ analyzing, and providing feedback on chess games, as well as user authentication
 
 # Standard library imports
 import json
+import logging
 
 # Django imports
 from django.shortcuts import render
@@ -31,7 +32,12 @@ from .chess_services import ChessComService, LichessService, save_game
 from .game_analyzer import GameAnalyzer
 from .validators import validate_password_complexity
 
-STOCKFISH_PATH = "/path/to/stockfish"
+STOCKFISH_PATH = (
+    "C:/Users/PCAdmin/Downloads/stockfish-windows-x86-64-avx2/stockfish/stockfish-windows-x86-64-avx2.exe"
+)
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 def index(request):
     """
@@ -132,6 +138,9 @@ def analyze_game_view(request, game_id):
         user = request.user
         depth = request.data.get("depth", 20)
 
+        if not isinstance(depth, int) or depth <= 0:
+            return JsonResponse({"error": "Invalid depth value."}, status=400)
+        
         # Fetch the game from the database
         game = Game.objects.filter(id=game_id, player=user).first()
 
@@ -139,10 +148,11 @@ def analyze_game_view(request, game_id):
             return JsonResponse({"error": "Game is missing."}, status=404)
 
         # Initialize GameAnalyzer
-        analyzer = GameAnalyzer(stockfish_path=STOCKFISH_PATH)
+        analyzer = GameAnalyzer()
 
         # Perform analysis
         try:
+            logger.info("Analyzing game %s", game_id)
             results = analyzer.analyze_games(game, depth=depth)
             return Response({"message": "Game analyzed successfully!", "results": results},
             status=200)
@@ -152,6 +162,7 @@ def analyze_game_view(request, game_id):
     except Game.DoesNotExist:
         return JsonResponse({"error": "Game not found."}, status=404)
     except Exception as e:
+        logger.error("Error in analyze_game_view: %s: %s", game_id, str(e), exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
 
 @csrf_exempt
@@ -161,20 +172,28 @@ def analyze_batch_games_view(request):
     """
     Analyze a batch of games for the authenticated user.
     """
-    user = request.user
-    depth = request.data.get("depth", 20)
-
-    # Fetch games for the user
-    games = Game.objects.filter(player=user)
-    if not games.exists():
-        return Response({"error": "No games found for analysis."}, status=404)
-
-    analyzer = GameAnalyzer(STOCKFISH_PATH)
     try:
-        results = analyzer.analyze_games(games, depth=depth)
-        return Response({"message": "Batch analysis completed!", "results": results}, status=200)
-    finally:
-        analyzer.close_engine()
+        user = request.user
+        depth = request.data.get("depth", 20)
+
+        if not isinstance(depth, int) or depth <= 0:
+            return JsonResponse({"error": "Invalid depth value."}, status=400)
+
+        # Fetch games for the user
+        games = Game.objects.filter(player=user)
+        if not games.exists():
+            return Response({"error": "No games found for analysis."}, status=404)
+
+        analyzer = GameAnalyzer()
+        try:
+            logger.info("Starting batch analysis for user %s", user.id)
+            results = analyzer.analyze_games(games, depth=depth)
+            return Response({"message": "Batch analysis completed!", "results": results}, status=200)
+        finally:
+            analyzer.close_engine()
+    except Exception as e:
+        logger.error("Error in analyze_batch_games_view: %s", str(e), exc_info=True)
+        return JsonResponse({"error": str(e)}, status=500)
 
 @csrf_exempt
 @api_view(["POST"])

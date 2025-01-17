@@ -4,17 +4,30 @@ It includes classes and methods to analyze single or multiple games, save analys
 database, and generate feedback based on the analysis.
 """
 
+import io
+import logging
 import chess
 import chess.engine
+import chess.pgn
 from .models import GameAnalysis, Game
+
+logger = logging.getLogger(__name__)
+
+STOCKFISH_PATH = (
+    "C:/Users/PCAdmin/Downloads/stockfish-windows-x86-64-avx2/stockfish/stockfish-windows-x86-64-avx2.exe"
+) # TODO: Move to env variables
 
 class GameAnalyzer:
     """
     Handles game analysis using Stockfish or external APIs.
     """
 
-    def __init__(self, stockfish_path="/path/to/stockfish"):
-        self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+    def __init__(self, stockfish_path=STOCKFISH_PATH):
+        try:
+            self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+        except Exception as e:
+            logger.error("Failed to initialize Stockfish engine: %s", str(e))
+            raise
 
     def analyze_games(self, games, depth=20):
         """
@@ -33,11 +46,16 @@ class GameAnalyzer:
         analysis_results = {}
         for game in games:
             if not game.pgn:
+                logger.warning("Game %s has no PGN. Skipping.", game.id)
                 continue
-            player_color = "white" if game.is_white else "black"
-            results = self._analyze_single_game(game.pgn, player_color, depth)
-            self.save_analysis_to_db(game, results)
-            analysis_results[game.id] = results
+            try:
+                player_color = "white" if game.is_white else "black"
+                results = self._analyze_single_game(game.pgn, player_color, depth)
+                self.save_analysis_to_db(game, results)
+                analysis_results[game.id] = results
+            except Exception as e:
+                logger.error("Error analyzing game %s: %s", game.id, str(e))
+                continue
         return analysis_results
 
     def _analyze_single_game(self, game_pgn, player_color="white", depth=20):
@@ -51,29 +69,57 @@ class GameAnalyzer:
         Returns:
             List[dict]: List of analysis results for each move.
         """
-        game = chess.pgn.read_game(game_pgn.splitlines())
-        if not game:
-            raise ValueError("Invalid PGN format")
+        try:
+            game_pgn = game_pgn.strip().replace("\r\n", "\n")
+            game = chess.pgn.read_game(io.StringIO(game_pgn))
+            if not game:
+                raise ValueError("Invalid PGN format")
 
-        board = game.board()
-        analysis_results = []
+            board = game.board()
+            if not board:
+                raise ValueError("Failed to initialize board from PGN")
+            analysis_results = []
+            with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
+                engine.configure({"Threads": 2, "Hash": 128})
+                for move in game.mainline_moves():
+                    try:
+                        if not board.is_legal(move):
+                            raise ValueError(
+                                f"Illegal move {move.uci()} encountered in position: {board.fen()}"
+                            )
+                        # Remove the incorrect turn check
+                        # if board.turn != (move.color == chess.WHITE):
+                        #     raise ValueError(f"Turn mismatch before move {move.uci()}: {board.fen()}")
+                        board.push(move)
+                        info = engine.analyse(board, chess.engine.Limit(depth=depth))
+                        print(f"INFO{info} END OF INFO")
+                        score = (
+                            info["score"].white().score(mate_score=10000) 
+                            if player_color == "white" 
+                            else info["score"].black().score(mate_score=10000)
+                        )
 
-        for move in game.mainline_moves():
-            board.push(move)
-            info = self.engine.analyse(board, chess.engine.Limit(depth=depth))
-            if player_color == "white":
-                score = info["score"].white().score(mate_score=10000)
-            else:
-                score = info["score"].black().score(mate_score=10000)
+                        analysis_results.append({
+                            "move": board.san(move),
+                            "score": score,
+                            "depth": depth,
+                        })
+                    except Exception as move_error:
+                        logger.error(
+                            "Error analyzing move %s in position %s: %s",
+                            move.uci(),
+                            board.fen(),
+                            str(move_error),
+                        )
+                        raise
 
-            analysis_results.append({
-                "move": board.san(move),
-                "score": score,
-                "depth": depth,
-            })
-
-        return analysis_results
-
+                return analysis_results
+        except ValueError as ve:
+            logger.error("Error analyzing single game (ValueError): %s", str(ve))
+            raise
+        except Exception as e:
+            logger.error("Error analyzing single game: %s", str(e))
+            raise
     def save_analysis_to_db(self, game, analysis_results):
         """
         Save analysis results to the database.
@@ -82,13 +128,18 @@ class GameAnalyzer:
             game (Game): The Game object.
             analysis_results (List[dict]): The analysis results.
         """
-        for result in analysis_results:
-            GameAnalysis.objects.create(
-                game=game,
-                move=result["move"],
-                score=result["score"],
-                depth=result["depth"],
-            )
+        try:
+            analysis_objects = [
+                GameAnalysis(
+                    game=game,
+                    move=result["move"],
+                    score=result["score"],
+                    depth=result["depth"],
+                ) for result in analysis_results
+            ]
+            GameAnalysis.objects.bulk_create(analysis_objects)
+        except Exception as e:
+            logger.error("Error saving analysis to database: %s", str(e))
 
     def generate_feedback(self, game_analysis):
         """
