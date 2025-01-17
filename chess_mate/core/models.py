@@ -1,3 +1,13 @@
+"""
+This module defines the database models for the ChessMate application.
+
+Models:
+- Player: Represents a player in the application.
+- Profile: Represents a user profile with additional information.
+- Game: Represents a chess game played by a user.
+- GameAnalysis: Represents the analysis of a chess game, including move details and scores.
+"""
+
 from django.db import models
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
@@ -23,23 +33,17 @@ class Profile(models.Model):
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.get_username
+        return self.user.username
 
     objects = models.Manager()
 
 @receiver(post_save, sender=User)
-def create_profile(sender, instance, created, **kwargs):
+def manage_profile(sender, instance, created, **kwargs):
     """
-    Signal to create a profile when a new user is created.
+    Signal to create or save a profile when a user is created or saved.
     """
     if created:
         Profile.objects.create(user=instance)
-
-@receiver(post_save, sender=User)
-def save_profile(sender, instance, **kwargs):
-    """
-    Signal to save the profile when the user is saved.
-    """
     instance.profile.save()
 
 class Game(models.Model):
@@ -59,6 +63,7 @@ class Game(models.Model):
     pgn: models.TextField = models.TextField()
     is_white: models.BooleanField = models.BooleanField()
     opening_name: models.CharField = models.CharField(max_length=200, blank=True, null=True)
+    analysis: models.JSONField = models.JSONField(null=True, blank=True)  # New field to store analysis as JSON
 
     class DoesNotExist(Exception):
         pass
@@ -80,13 +85,16 @@ class GameAnalysis(models.Model):
     Model representing a game analysis.
     """
     game: models.ForeignKey = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='analyses')
-    move: models.CharField = models.CharField(max_length=10)
+    move: models.CharField = models.CharField(max_length=20)
     score: models.IntegerField = models.IntegerField()
     depth: models.IntegerField = models.IntegerField()
     time_spent: models.FloatField = models.FloatField(null=True, blank=True)
+    is_capture: models.BooleanField = models.BooleanField(default=False)  # New field to indicate if the move is a capture
+    move_number: models.IntegerField = models.IntegerField(default=0)  # New field to indicate the move number
+    evaluation_trend: models.CharField = models.CharField(max_length=10, null=True, blank=True)  # New field to track evaluation trend
 
     def __str__(self):
-        return f"Analysis for Game ID {self.game.get_id()}"
+        return f"Analysis for Game ID {self.game.id}"
 
     class Meta:
         indexes = [

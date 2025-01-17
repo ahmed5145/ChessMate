@@ -4,18 +4,18 @@ It includes classes and methods to analyze single or multiple games, save analys
 database, and generate feedback based on the analysis.
 """
 
+import os
 import io
 import logging
 import chess
 import chess.engine
 import chess.pgn
-from .models import GameAnalysis, Game
+from django.db import DatabaseError
+from .models import Game
 
 logger = logging.getLogger(__name__)
 
-STOCKFISH_PATH = (
-    "C:/Users/PCAdmin/Downloads/stockfish-windows-x86-64-avx2/stockfish/stockfish-windows-x86-64-avx2.exe"
-) # TODO: Move to env variables
+STOCKFISH_PATH = os.getenv("STOCKFISH_PATH")
 
 class GameAnalyzer:
     """
@@ -25,7 +25,7 @@ class GameAnalyzer:
     def __init__(self, stockfish_path=STOCKFISH_PATH):
         try:
             self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        except Exception as e:
+        except (chess.engine.EngineError, ValueError) as e:
             logger.error("Failed to initialize Stockfish engine: %s", str(e))
             raise
 
@@ -44,82 +44,98 @@ class GameAnalyzer:
             games = [games]
 
         analysis_results = {}
-        for game in games:
-            if not game.pgn:
-                logger.warning("Game %s has no PGN. Skipping.", game.id)
-                continue
-            try:
-                player_color = "white" if game.is_white else "black"
-                results = self._analyze_single_game(game.pgn, player_color, depth)
-                self.save_analysis_to_db(game, results)
-                analysis_results[game.id] = results
-            except Exception as e:
-                logger.error("Error analyzing game %s: %s", game.id, str(e))
-                continue
+        try:
+            with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
+                engine.configure({"Threads": 2, "Hash": 128})
+                for game in games:
+                    if not game.pgn:
+                        logger.warning("Game %s has no PGN. Skipping.", game.id)
+                        continue
+
+                    if game.analysis:
+                        logger.info(
+                            "Analysis for game %s already exists. Returning existing analysis.",
+                            game.id
+                        )
+                        analysis_results[game.id] = game.analysis
+                        continue
+
+                    try:
+                        player_color = "white" if game.is_white else "black"
+                        results = self._analyze_single_game(game.pgn, player_color, depth, engine)
+                        self.save_analysis_to_db(game, results)
+                        analysis_results[game.id] = results
+                    except (ValueError, chess.engine.EngineError) as e:
+                        logger.error("Error analyzing game %s: %s", game.id, str(e))
+                        continue
+        except (chess.engine.EngineError, ValueError) as e:
+            logger.error("Error initializing Stockfish engine: %s", str(e))
+            raise
         return analysis_results
 
-    def _analyze_single_game(self, game_pgn, player_color="white", depth=20):
+    def _analyze_single_game(self, game_pgn, player_color="white", depth=20, engine=None):
         """
         Analyze a single game from PGN format.
 
         Args:
             game_pgn (str): The game's PGN string.
             depth (int): Analysis depth.
+            engine (chess.engine.SimpleEngine): The Stockfish engine instance.
 
         Returns:
             List[dict]: List of analysis results for each move.
         """
         try:
             game_pgn = game_pgn.strip().replace("\r\n", "\n")
-            game = chess.pgn.read_game(io.StringIO(game_pgn))
+            pgn_stream = io.StringIO(game_pgn)
+            game = chess.pgn.read_game(pgn_stream)
             if not game:
                 raise ValueError("Invalid PGN format")
 
             board = game.board()
             if not board:
                 raise ValueError("Failed to initialize board from PGN")
+
             analysis_results = []
-            with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
-                engine.configure({"Threads": 2, "Hash": 128})
-                for move in game.mainline_moves():
-                    try:
-                        if not board.is_legal(move):
-                            raise ValueError(
-                                f"Illegal move {move.uci()} encountered in position: {board.fen()}"
-                            )
-                        # Remove the incorrect turn check
-                        # if board.turn != (move.color == chess.WHITE):
-                        #     raise ValueError(f"Turn mismatch before move {move.uci()}: {board.fen()}")
-                        board.push(move)
-                        info = engine.analyse(board, chess.engine.Limit(depth=depth))
-                        print(f"INFO{info} END OF INFO")
-                        score = (
-                            info["score"].white().score(mate_score=10000) 
-                            if player_color == "white" 
-                            else info["score"].black().score(mate_score=10000)
-                        )
-
-                        analysis_results.append({
-                            "move": board.san(move),
-                            "score": score,
-                            "depth": depth,
-                        })
-                    except Exception as move_error:
-                        logger.error(
-                            "Error analyzing move %s in position %s: %s",
-                            move.uci(),
-                            board.fen(),
-                            str(move_error),
-                        )
-                        raise
-
-                return analysis_results
+            last_score = None
+            for move_number, move in enumerate(game.mainline_moves(), start=1):
+                # Ensure move legality
+                if not board.is_legal(move):
+                    raise ValueError(
+                        f"Illegal move {move.uci()} encountered in position: {board.fen()}"
+                    )
+                board.push(move)
+                info = engine.analyse(board, chess.engine.Limit(depth=depth))
+                score = (
+                    info["score"].white().score(mate_score=10000)
+                    if player_color == "white"
+                    else info["score"].black().score(mate_score=10000)
+                )
+                evaluation_trend = None
+                if last_score is not None:
+                    if score > last_score:
+                        evaluation_trend = "improving"
+                    elif score < last_score:
+                        evaluation_trend = "worsening"
+                    else:
+                        evaluation_trend = "neutral"
+                last_score = score
+                analysis_results.append({
+                    "move": board.san(move) if board.is_legal(move) else move.uci(),
+                    "score": score,
+                    "depth": depth,
+                    "is_capture": board.is_capture(move),
+                    "move_number": move_number,
+                    "evaluation_trend": evaluation_trend
+                })
+            return analysis_results
         except ValueError as ve:
             logger.error("Error analyzing single game (ValueError): %s", str(ve))
             raise
-        except Exception as e:
+        except (chess.engine.EngineError) as e:
             logger.error("Error analyzing single game: %s", str(e))
             raise
+
     def save_analysis_to_db(self, game, analysis_results):
         """
         Save analysis results to the database.
@@ -129,16 +145,9 @@ class GameAnalyzer:
             analysis_results (List[dict]): The analysis results.
         """
         try:
-            analysis_objects = [
-                GameAnalysis(
-                    game=game,
-                    move=result["move"],
-                    score=result["score"],
-                    depth=result["depth"],
-                ) for result in analysis_results
-            ]
-            GameAnalysis.objects.bulk_create(analysis_objects)
-        except Exception as e:
+            game.analysis = analysis_results  # Store the analysis results as JSON
+            game.save()
+        except (DatabaseError, ValueError) as e:
             logger.error("Error saving analysis to database: %s", str(e))
 
     def generate_feedback(self, game_analysis):
@@ -216,3 +225,23 @@ class GameAnalyzer:
         """Closes the Stockfish engine."""
         if self.engine:
             self.engine.quit()
+
+# Placeholder for future enhancement to support asynchronous analysis using Celery
+# from celery import shared_task
+
+# @shared_task
+# def analyze_games_async(game_ids, depth=20):
+#     """
+#     Asynchronously analyze multiple games.
+#
+#     Args:
+#         game_ids (List[int]): List of game IDs to analyze.
+#         depth (int): Analysis depth.
+#
+#     Returns:
+#         Dict: Mapping of game IDs to their analysis results.
+#     """
+#     games = Game.objects.filter(id__in=game_ids)
+#     analyzer = GameAnalyzer()
+#     results = analyzer.analyze_games(games, depth=depth)
+#     return results

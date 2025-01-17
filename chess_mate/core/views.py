@@ -4,6 +4,7 @@ analyzing, and providing feedback on chess games, as well as user authentication
 """
 
 # Standard library imports
+import os
 import json
 import logging
 
@@ -16,7 +17,7 @@ from django.contrib.auth import authenticate
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.mail import send_mail
 from django.db import transaction
-from django_ratelimit.decorators import ratelimit
+from django_ratelimit.decorators import ratelimit   # type: ignore
 
 # Third-party imports
 import requests
@@ -32,9 +33,7 @@ from .chess_services import ChessComService, LichessService, save_game
 from .game_analyzer import GameAnalyzer
 from .validators import validate_password_complexity
 
-STOCKFISH_PATH = (
-    "C:/Users/PCAdmin/Downloads/stockfish-windows-x86-64-avx2/stockfish/stockfish-windows-x86-64-avx2.exe"
-)
+STOCKFISH_PATH = os.getenv("STOCKFISH_PATH")
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
