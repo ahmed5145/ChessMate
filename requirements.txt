@@ -15,3 +15,4 @@ pytest-django
 pytest-cov
 djangorestframework
 djangorestframework-simplejwt
+dj-database-url==2.3.0
