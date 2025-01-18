@@ -61,7 +61,7 @@ class TestGameAnalysis:
         response = api_client.post(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_analyze_game_view_authorized(self, api_client, user, game):
+    def test_analyze_game_view_authorized(self, api_client, user, game, mock_openai):
         api_client.force_authenticate(user=user)
         url = reverse('analyze_game', args=[game.id])
         try:
@@ -69,6 +69,13 @@ class TestGameAnalysis:
             assert response.status_code == status.HTTP_200_OK
             assert 'analysis' in response.data
             assert 'feedback' in response.data
+            
+            # Verify OpenAI was called
+            mock_instance = mock_openai.return_value
+            assert mock_instance.chat.completions.create.called
+            
+            # Verify the feedback contains the mock response
+            assert "Test feedback content" in str(response.data)
         except chess.engine.EngineTerminatedError:
             pytest.skip("Stockfish engine not available")
 
@@ -94,7 +101,7 @@ class TestGameAnalysis:
             except chess.engine.EngineTerminatedError:
                 pytest.skip("Stockfish engine not available")
 
-    def test_analyze_batch_games_view(self, api_client, user, game):
+    def test_analyze_batch_games_view(self, api_client, user, game, mock_openai):
         api_client.force_authenticate(user=user)
         url = reverse('batch_analyze_games')
         try:
@@ -121,6 +128,13 @@ class TestGameAnalysis:
             assert 'mistakes' in common_mistakes
             assert 'inaccuracies' in common_mistakes
             assert 'time_pressure' in common_mistakes
+            
+            # Verify OpenAI was called
+            mock_instance = mock_openai.return_value
+            assert mock_instance.chat.completions.create.called
+            
+            # Verify the feedback contains the mock response
+            assert "Test feedback content" in str(response.data)
         except chess.engine.EngineTerminatedError:
             pytest.skip("Stockfish engine not available")
 
