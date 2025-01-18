@@ -25,12 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-$cxqc=&&9xwbq%)0xd^!*s$u3_d&u61f-is2u=ffb6!cv@-dob'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-$cxqc=&&9xwbq%)0xd^!*s$u3_d&u61f-is2u=ffb6!cv@-dob')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS: list[str] = []
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') if os.getenv('ALLOWED_HOSTS') else []
 
 
 # Application definition
@@ -84,16 +84,29 @@ WSGI_APPLICATION = 'chess_mate.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-        'ATOMIC_REQUESTS': True,
-        'OPTIONS': {
-            'timeout': 30,  # 30 seconds timeout
-        },
+# Database configuration
+if os.getenv('DATABASE_URL'):
+    # Parse database URL for production
+    import dj_database_url
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.getenv('DATABASE_URL'),
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
     }
-}
+else:
+    # Default SQLite configuration
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+            'ATOMIC_REQUESTS': True,
+            'OPTIONS': {
+                'timeout': 30,
+            },
+        }
+    }
 
 
 # Password validation
@@ -131,6 +144,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
+# Media files configuration
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -171,11 +192,8 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
 ]
 
-# Path to Stockfish executable
-STOCKFISH_PATH = (
-    "C:/Users/PCAdmin/Downloads/stockfish/windows-x86-64-avx2/"
-    "stockfish/stockfish-windows-x86-64-avx2.exe"
-)
+# Stockfish configuration
+STOCKFISH_PATH = os.getenv('STOCKFISH_PATH', 'stockfish')  # Default to system-installed Stockfish
 
 
 # REST Framework settings
@@ -231,3 +249,14 @@ LOGGING = {
         'level': 'DEBUG',
     },
 }
+
+# Security settings for production
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
