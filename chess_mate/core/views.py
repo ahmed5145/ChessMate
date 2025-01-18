@@ -321,7 +321,9 @@ def analyze_game_view(request, game_id):
                 analyzer.close_engine()
             except chess.engine.EngineTerminatedError:
                 logger.warning("Engine already terminated.")
-            except Exception as e:
+    except Exception as e:
+                logger.error("Error closing engine: %s", str(e))
+    except Exception as e:
         logger.error("Error in analyze_game_view: %s", str(e), exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -336,6 +338,7 @@ def analyze_batch_games_view(request):
         user = request.user
         num_games = int(request.data.get("num_games", 10))
         use_ai = request.data.get("use_ai", True)
+        depth = request.data.get("depth", 20)  # Added depth parameter
 
         # Validate num_games
         try:
@@ -476,17 +479,17 @@ def analyze_batch_games_view(request):
 
             # Generate feedback (with or without AI)
             if use_ai:
-                    try:
-                        # Get or create user profile
-                        profile, created = Profile.objects.get_or_create(
-                            user=user,
-                            defaults={
-                                'rating': 1500,
-                                'total_games': 0,
-                                'preferred_openings': []
-                            }
-                        )
-                        
+                try:
+                    # Get or create user profile
+                    profile, created = Profile.objects.get_or_create(
+                        user=user,
+                        defaults={
+                            'rating': 1500,
+                            'total_games': 0,
+                            'preferred_openings': []
+                        }
+                    )
+                    
                     # Generate AI feedback using the feedback generator
                     ai_feedback = ai_feedback_generator.generate_personalized_feedback(
                         game_analysis=analysis_results,
@@ -498,11 +501,11 @@ def analyze_batch_games_view(request):
                         }
                     )
                     dynamic_feedback = ai_feedback
-                    except Exception as e:
+                except Exception as e:
                     logger.error("Error generating AI feedback: %s", str(e))
-                        # Fall back to non-AI feedback
-                        dynamic_feedback = generate_feedback_without_ai(analysis_results, overall_stats)
-                        overall_stats["ai_error"] = "AI feedback unavailable - using standard analysis"
+                    # Fall back to non-AI feedback
+                    dynamic_feedback = generate_feedback_without_ai(analysis_results, overall_stats)
+                    overall_stats["ai_error"] = "AI feedback unavailable - using standard analysis"
             else:
                 # Use non-AI feedback by default
                 dynamic_feedback = generate_feedback_without_ai(analysis_results, overall_stats)
