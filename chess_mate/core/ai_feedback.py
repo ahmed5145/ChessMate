@@ -28,7 +28,12 @@ class AIFeedbackGenerator:
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize the feedback generator with OpenAI API key."""
-        self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
+        self.client = None
+        api_key = api_key or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            logger.warning("OpenAI API key not set. AI feedback will be disabled.")
+        else:
+            self.client = OpenAI(api_key=api_key)
 
     def generate_personalized_feedback(
         self,
@@ -46,6 +51,10 @@ class AIFeedbackGenerator:
             Dictionary containing structured feedback
         """
         try:
+            if not self.client:
+                logger.warning("OpenAI client not initialized. Using fallback feedback.")
+                return self._generate_fallback_feedback(game_analysis)
+
             # Prepare the analysis summary
             analysis_summary = self._prepare_analysis_summary(game_analysis)
             

@@ -58,14 +58,18 @@ except ImportError:
     stripe = None
     logger.warning("Stripe package not installed. Payment features will be disabled.")
 
-
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def get_openai_client():
+    """Get OpenAI client with proper error handling."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.warning("OpenAI API key not set. AI features will be disabled.")
+        return None
+    return OpenAI(api_key=api_key)
 
 # Initialize Stripe
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
-# Initialize feedback generator
+# Initialize feedback generator with proper error handling
 ai_feedback_generator = AIFeedbackGenerator(api_key=os.getenv("OPENAI_API_KEY"))
 
 def index(request):
@@ -257,8 +261,8 @@ def analyze_game_view(request, game_id):
             # Generate comprehensive feedback
             feedback = analyzer.generate_feedback(analysis_results[game_id])
             
-            # Try AI feedback if requested, but fall back gracefully
-            if use_ai and os.getenv("OPENAI_API_KEY"):
+            # Try AI feedback if requested
+            if use_ai:
                 try:
                     profile, _ = Profile.objects.get_or_create(
                         user=user,
@@ -269,6 +273,7 @@ def analyze_game_view(request, game_id):
                         }
                     )
                     
+                    # Generate AI feedback using the feedback generator
                     ai_feedback = ai_feedback_generator.generate_personalized_feedback(
                         game_analysis=analysis_results[game_id],
                         player_profile={
@@ -307,62 +312,30 @@ def analyze_game_view(request, game_id):
                     }
                 )
             
-            # Save analysis results
-            game.analysis = analysis_results[game_id]
-            game.save()
-
-            response_data = {
-                "success": True,
-                "message": "Game analyzed successfully!",
+            return Response({
                 "analysis": analysis_results[game_id],
-                "feedback": feedback,
-                "analysis_time": analysis_time,
-                "game_info": {
-                    "id": game.id,
-                    "opponent": game.opponent,
-                    "result": game.result,
-                    "played_at": game.played_at,
-                    "opening_name": game.opening_name,
-                    "is_white": game.is_white
-                }
-            }
-
-            return Response(response_data, status=status.HTTP_200_OK)
+                "feedback": feedback
+            }, status=200)
         finally:
             try:
                 analyzer.close_engine()
             except chess.engine.EngineTerminatedError:
                 logger.warning("Engine already terminated.")
             except Exception as e:
-                logger.error("Error closing engine: %s", str(e))
-    except Exception as e:
-        logger.error("Error in analyze_game_view: %s: %s", game_id, str(e), exc_info=True)
-        return Response({
-            "success": False,
-            "error": "An error occurred during analysis. Please try again.",
-            "details": str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error("Error in analyze_game_view: %s", str(e), exc_info=True)
+        return JsonResponse({"error": str(e)}, status=500)
 
 @csrf_exempt
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def analyze_batch_games_view(request):
     """
-    Analyze a batch of games for the authenticated user.
+    Endpoint to analyze a batch of games.
     """
     try:
         user = request.user
-        depth = request.data.get("depth", 20)
-        num_games = request.data.get("num_games", 5)
-        use_ai = request.data.get("use_ai", False)  # Make AI feedback optional
-
-        # Validate depth
-        try:
-            depth = int(depth)
-            if depth <= 0:
-                return Response({"error": "Invalid depth value."}, status=status.HTTP_400_BAD_REQUEST)
-        except (TypeError, ValueError):
-            return Response({"error": "Invalid depth value."}, status=status.HTTP_400_BAD_REQUEST)
+        num_games = int(request.data.get("num_games", 10))
+        use_ai = request.data.get("use_ai", True)
 
         # Validate num_games
         try:
@@ -502,43 +475,34 @@ def analyze_batch_games_view(request):
                     })
 
             # Generate feedback (with or without AI)
-            if use_ai and os.getenv("OPENAI_API_KEY"):
-                try:
-                    # Get or create user profile
-                    profile, created = Profile.objects.get_or_create(
-                        user=user,
-                        defaults={
-                            'rating': 1500,
-                            'total_games': 0,
-                            'preferred_openings': []
+            if use_ai:
+                    try:
+                        # Get or create user profile
+                        profile, created = Profile.objects.get_or_create(
+                            user=user,
+                            defaults={
+                                'rating': 1500,
+                                'total_games': 0,
+                                'preferred_openings': []
+                            }
+                        )
+                        
+                    # Generate AI feedback using the feedback generator
+                    ai_feedback = ai_feedback_generator.generate_personalized_feedback(
+                        game_analysis=analysis_results,
+                        player_profile={
+                            "username": user.username,
+                            "rating": profile.rating,
+                            "total_games": profile.total_games,
+                            "preferred_openings": profile.preferred_openings
                         }
                     )
-                    
-                    # Try to generate AI feedback
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": "You are a chess analysis expert providing specific, actionable feedback to help players improve their game."},
-                            {"role": "user", "content": f"Analyze these chess games and provide specific, actionable feedback: {json.dumps(overall_stats)}"}
-                        ],
-                        max_tokens=500,
-                        temperature=0.7
-                    )
-                    dynamic_feedback = response.choices[0].message.content.strip()
-                except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 429:
-                        logger.warning("OpenAI API quota exceeded or rate limited. Error: %s", str(e))
+                    dynamic_feedback = ai_feedback
+                    except Exception as e:
+                    logger.error("Error generating AI feedback: %s", str(e))
+                        # Fall back to non-AI feedback
                         dynamic_feedback = generate_feedback_without_ai(analysis_results, overall_stats)
-                        overall_stats["ai_error"] = "AI analysis unavailable - quota exceeded. Using standard analysis."
-                    else:
-                        logger.error("OpenAI API error: %s", str(e))
-                        dynamic_feedback = generate_feedback_without_ai(analysis_results, overall_stats)
-                        overall_stats["ai_error"] = "AI analysis unavailable - API error. Using standard analysis."
-                except Exception as e:
-                    logger.error("Error generating OpenAI feedback: %s", str(e))
-                    # Fall back to non-AI feedback
-                    dynamic_feedback = generate_feedback_without_ai(analysis_results, overall_stats)
-                    overall_stats["ai_error"] = "AI feedback unavailable - using standard analysis"
+                        overall_stats["ai_error"] = "AI feedback unavailable - using standard analysis"
             else:
                 # Use non-AI feedback by default
                 dynamic_feedback = generate_feedback_without_ai(analysis_results, overall_stats)
