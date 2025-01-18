@@ -62,7 +62,8 @@ class GameAnalyzer:
 
                     try:
                         player_color = "white" if game.is_white else "black"
-                        results = self._analyze_single_game(game.pgn, player_color, depth, engine)
+                        results, opening_name = self._analyze_single_game(game.pgn, player_color, depth, engine)
+                        game.opening_name = opening_name  # Save the opening name
                         self.save_analysis_to_db(game, results)
                         analysis_results[game.id] = results
                     except (ValueError, chess.engine.EngineError) as e:
@@ -71,6 +72,8 @@ class GameAnalyzer:
         except (chess.engine.EngineError, ValueError) as e:
             logger.error("Error initializing Stockfish engine: %s", str(e))
             raise
+        finally:
+            self.close_engine()  # Ensure the engine is closed after analysis
         return analysis_results
 
     def _analyze_single_game(self, game_pgn, player_color="white", depth=20, engine=None):
@@ -91,6 +94,13 @@ class GameAnalyzer:
             game = chess.pgn.read_game(pgn_stream)
             if not game:
                 raise ValueError("Invalid PGN format")
+
+            # Extract and format opening from PGN headers
+            opening_url = game.headers.get("ECOUrl", "Unknown Opening")
+            if "openings/" in opening_url:
+                opening_name = opening_url.split("openings/")[1].replace("-", " ")
+            else:
+                opening_name = "Unknown Opening"
 
             board = game.board()
             if not board:
@@ -128,7 +138,7 @@ class GameAnalyzer:
                     "move_number": move_number,
                     "evaluation_trend": evaluation_trend
                 })
-            return analysis_results
+            return analysis_results, opening_name
         except ValueError as ve:
             logger.error("Error analyzing single game (ValueError): %s", str(ve))
             raise

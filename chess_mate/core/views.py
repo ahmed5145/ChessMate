@@ -26,6 +26,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
+import chess.engine
 
 # Local application imports
 from .models import Game, GameAnalysis, Profile
@@ -139,7 +140,7 @@ def analyze_game_view(request, game_id):
 
         if not isinstance(depth, int) or depth <= 0:
             return JsonResponse({"error": "Invalid depth value."}, status=400)
-        
+
         # Fetch the game from the database
         game = Game.objects.filter(id=game_id, player=user).first()
 
@@ -156,8 +157,10 @@ def analyze_game_view(request, game_id):
             return Response({"message": "Game analyzed successfully!", "results": results},
             status=200)
         finally:
-            analyzer.close_engine()
-
+            try:
+                analyzer.close_engine()
+            except chess.engine.EngineTerminatedError:
+                logger.warning("Engine already terminated.")
     except Game.DoesNotExist:
         return JsonResponse({"error": "Game not found."}, status=404)
     except Exception as e:
@@ -189,7 +192,10 @@ def analyze_batch_games_view(request):
             results = analyzer.analyze_games(games, depth=depth)
             return Response({"message": "Batch analysis completed!", "results": results}, status=200)
         finally:
-            analyzer.close_engine()
+            try:
+                analyzer.close_engine()
+            except chess.engine.EngineTerminatedError:
+                logger.warning("Engine already terminated.")
     except Exception as e:
         logger.error("Error in analyze_batch_games_view: %s", str(e), exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
