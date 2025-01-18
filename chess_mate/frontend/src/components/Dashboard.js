@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { analyzeSpecificGame, fetchUserGames, logoutUser } from "../api";
+import { fetchUserGames } from "../api";
 import FetchGames from "./FetchGames";
-import { ChevronLeft, ChevronRight, Activity, LogOut, Menu } from "lucide-react";
+import { Activity, Target, ChartBar, Sword } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
+import "./Dashboard.css";
 
 const Dashboard = () => {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [numGames, setNumGames] = useState(50);
   const gamesPerPage = 10;
+  const navigate = useNavigate();
 
   const fetchGames = async () => {
     setLoading(true);
@@ -17,9 +21,18 @@ const Dashboard = () => {
       setGames(data || []);
     } catch (error) {
       console.error("Error fetching games:", error);
+      toast.error("Failed to fetch games. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBatchAnalysis = () => {
+    if (numGames <= 0) {
+      toast.error("Number of games must be greater than 0.");
+      return;
+    }
+    navigate("/batch-analysis", { state: { numGames } });
   };
 
   useEffect(() => {
@@ -31,193 +44,207 @@ const Dashboard = () => {
   const currentGames = games ? games.slice(indexOfFirstGame, indexOfLastGame) : [];
   const totalPages = games ? Math.ceil(games.length / gamesPerPage) : 0;
 
-  const getResultColor = (result) => {
-    switch (result?.toLowerCase()) {
-      case "win":
-        return "text-green-600";
-      case "loss":
-        return "text-red-600";
-      case "draw":
-        return "text-yellow-600";
-      default:
-        return "text-gray-600";
-    }
+  const handleAnalyzeGame = (gameId) => {
+    navigate(`/analysis/${gameId}`);
   };
 
-  const handleLogout = () => {
-    logoutUser();
-    window.location.href = "/";
-  };
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-64"></div>
+            <div className="h-4 bg-gray-200 rounded w-48"></div>
+            <div className="space-y-3">
+              <div className="h-4 bg-gray-200 rounded w-full"></div>
+              <div className="h-4 bg-gray-200 rounded w-full"></div>
+              <div className="h-4 bg-gray-200 rounded w-full"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!games.length) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="text-center">
+          <Sword className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No games found</h3>
+          <p className="mt-1 text-sm text-gray-500">Get started by fetching your chess games.</p>
+          <div className="mt-6">
+            <button
+              onClick={() => navigate('/fetch-games')}
+              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              <Activity className="h-5 w-5 mr-2" />
+              Fetch Games
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="sm:flex sm:items-center sm:justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Chess Games Dashboard</h1>
-          <div className="relative">
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Chess Game Analysis Dashboard</h1>
+        <p className="mt-2 text-gray-600">
+          Analyze your games and improve your chess skills
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h2 className="text-xl font-semibold mb-4 flex items-center">
+            <Activity className="w-6 h-6 text-blue-500 mr-2" />
+            Quick Stats
+          </h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-600">Total Games</p>
+              <p className="text-2xl font-bold text-blue-700">{games.length}</p>
+            </div>
+            <div className="p-4 bg-green-50 rounded-lg">
+              <p className="text-sm text-green-600">Analyzed Games</p>
+              <p className="text-2xl font-bold text-green-700">
+                {games.filter(game => game.analysis).length}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h2 className="text-xl font-semibold mb-4 flex items-center">
+            <Target className="w-6 h-6 text-purple-500 mr-2" />
+            Batch Analysis
+          </h2>
+          <div className="flex items-center space-x-4">
+            <input
+              type="number"
+              value={numGames}
+              onChange={(e) => setNumGames(Math.max(1, e.target.value))}
+              className="w-24 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              min="1"
+            />
             <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              onClick={handleBatchAnalysis}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center"
             >
-              <Menu className="h-4 w-4 mr-1.5" />
-              Menu
+              <ChartBar className="w-5 h-5 mr-2" />
+              Analyze Games
             </button>
-            {menuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg">
-                <button
-                  onClick={handleLogout}
-                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-xl font-semibold flex items-center">
+            <Sword className="w-6 h-6 text-gray-500 mr-2" />
+            Recent Games
+          </h2>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Opponent
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Result
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Opening
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {currentGames.map((game) => (
+                <tr
+                  key={game.id}
+                  className="hover:bg-gray-50 transition-colors"
                 >
-                  <LogOut className="h-4 w-4 mr-1.5 inline" />
-                  Logout
-                </button>
-              </div>
-            )}
-          </div>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {new Date(game.played_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {game.opponent}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        game.result === 'win'
+                          ? 'bg-green-100 text-green-800'
+                          : game.result === 'loss'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}
+                    >
+                      {game.result}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {game.opening_name || 'Unknown Opening'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button
+                      onClick={() => handleAnalyzeGame(game.id)}
+                      className="text-indigo-600 hover:text-indigo-900 flex items-center"
+                    >
+                      <Activity className="w-4 h-4 mr-1" />
+                      Analyze
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        <div className="mt-8 bg-white rounded-lg shadow">
-          <div className="p-6">
-            <FetchGames onGamesFetched={fetchGames} />
+        {games.length > gamesPerPage && (
+          <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <button
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              className={`px-3 py-1 rounded-md ${
+                currentPage === 1
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className={`px-3 py-1 rounded-md ${
+                currentPage === totalPages
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Next
+            </button>
           </div>
-        </div>
+        )}
+      </div>
 
-        <div className="mt-8 bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">Your Games History</h2>
-          </div>
-
-          {loading ? (
-            <div className="p-8 flex justify-center">
-              <div className="flex items-center space-x-2">
-                <svg className="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span className="text-gray-600">Loading games...</span>
-              </div>
-            </div>
-          ) : games.length > 0 ? (
-            <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pieces</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Played At</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {currentGames.map((game) => (
-                      <tr key={game.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getResultColor(game.result)}`}>
-                            {game.result || "Unknown"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {game.is_white === true || game.is_white === 1 ? "White" : "Black"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {game.played_at
-                            ? new Date(game.played_at).toLocaleString()
-                            : "Unknown"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <button
-                            onClick={() => analyzeSpecificGame(game.id)}
-                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                          >
-                            <Activity className="h-4 w-4 mr-1.5" />
-                            Analyze
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {totalPages > 1 && (
-                <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-                  <div className="flex-1 flex justify-center">
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                      <button
-                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                        disabled={currentPage === 1}
-                        className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
-                          currentPage === 1
-                            ? "text-gray-300 cursor-not-allowed"
-                            : "text-gray-500 hover:bg-gray-50"
-                        }`}
-                      >
-                        <ChevronLeft className="h-5 w-5" />
-                      </button>
-                      {Array.from({ length: totalPages }, (_, i) => i + 1)
-                        .filter(page => {
-                          const buffer = 2;
-                          return page === 1 || 
-                                 page === totalPages || 
-                                 (page >= currentPage - buffer && 
-                                  page <= currentPage + buffer);
-                        })
-                        .map((page, index, array) => {
-                          if (index > 0 && array[index - 1] !== page - 1) {
-                            return [
-                              <span key={`ellipsis-${page}`} className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                                ...
-                              </span>,
-                              <button
-                                key={page}
-                                onClick={() => setCurrentPage(page)}
-                                className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
-                                  currentPage === page
-                                    ? "z-10 bg-indigo-50 border-indigo-500 text-indigo-600"
-                                    : "bg-white text-gray-500 hover:bg-gray-50"
-                                }`}
-                              >
-                                {page}
-                              </button>
-                            ];
-                          }
-                          return (
-                            <button
-                              key={page}
-                              onClick={() => setCurrentPage(page)}
-                              className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
-                                currentPage === page
-                                  ? "z-10 bg-indigo-50 border-indigo-500 text-indigo-600"
-                                  : "bg-white text-gray-500 hover:bg-gray-50"
-                              }`}
-                            >
-                              {page}
-                            </button>
-                          );
-                        })}
-                      <button
-                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                        disabled={currentPage === totalPages}
-                        className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
-                          currentPage === totalPages
-                            ? "text-gray-300 cursor-not-allowed"
-                            : "text-gray-500 hover:bg-gray-50"
-                        }`}
-                      >
-                        <ChevronRight className="h-5 w-5" />
-                      </button>
-                    </nav>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="p-8 text-center">
-              <p className="text-gray-500">No games found. Fetch games to get started!</p>
-            </div>
-          )}
-        </div>
+      <div className="mt-8">
+        <FetchGames onGamesFetched={fetchGames} />
       </div>
     </div>
   );

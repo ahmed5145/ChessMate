@@ -12,6 +12,7 @@ urlpatterns = [
     path("api/register/", views.register_view, name="register"),
     path("api/login/", views.login_view, name="login"),
     path("api/logout/", views.logout_view, name="logout"),
+    path('api/token/refresh/', views.token_refresh_view, name='token_refresh'),
 
     # Game management endpoints
     path('api/fetch-games/', views.fetch_games, name='fetch_games'),
@@ -27,5 +28,10 @@ urlpatterns = [
     path('api/feedback/<int:game_id>/', views.game_feedback_view, name='game_feedback'),
     path('api/feedback/batch/', views.batch_feedback_view, name='batch_feedback'),
 
+    # Credit system endpoints
+    path('api/credits/', views.get_credits, name='get_credits'),
+    path('api/credits/deduct/', views.deduct_credits, name='deduct_credits'),
+    path('api/purchase-credits/', views.purchase_credits, name='purchase_credits'),
+    path('api/confirm-purchase/', views.confirm_purchase, name='confirm_purchase'),
 
 ]

@@ -162,6 +162,16 @@ export const analyzeSpecificGame = async (gameId) => {
   }
 };
 
+// Analyze a batch of games
+export const analyzeBatchGames = async (numGames) => {
+  try {
+    const response = await api.post("/games/batch-analyze/", { num_games: parseInt(numGames, 10) });
+    return response.data;
+  } catch (error) {
+    throw error.response ? error.response.data : error.message;
+  }
+};
+
 // Fetch analysis for a game
 export const fetchGameAnalysis = async (gameId) => {
   try {

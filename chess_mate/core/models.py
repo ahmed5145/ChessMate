@@ -30,7 +30,9 @@ class Profile(models.Model):
     user: models.OneToOneField = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     bio: models.TextField = models.TextField(blank=True, null=True)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
+    credits: models.IntegerField = models.IntegerField(default=0)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.user.username
@@ -38,12 +40,20 @@ class Profile(models.Model):
     objects = models.Manager()
 
 @receiver(post_save, sender=User)
-def manage_profile(sender, instance, created, **kwargs):
+def create_user_profile(sender, instance, created, **kwargs):
     """
     Signal to create or save a profile when a user is created or saved.
     """
     if created:
-        Profile.objects.create(user=instance)
+        Profile.objects.create(user=instance, credits=5)  # Give 5 free credits to new users
+
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    """
+    Signal to create or save a profile when a user is created or saved.
+    """
+    if not hasattr(instance, 'profile'):
+        Profile.objects.create(user=instance, credits=5)
     instance.profile.save()
 
 class Game(models.Model):

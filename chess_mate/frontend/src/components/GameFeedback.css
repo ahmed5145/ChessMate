@@ -1,56 +1,135 @@
 .feedback-container {
-    background-color: #f9f9f9;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  background-color: #f9fafb;
+  min-height: calc(100vh - 64px);
+}
+
+.feedback-section {
+  transition: transform 0.2s ease-in-out;
+}
+
+.feedback-section:hover {
+  transform: translateY(-2px);
+}
+
+.feedback-section h3 {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+
+.feedback-section ul {
+  margin-top: 0.5rem;
+}
+
+.feedback-section li {
+  line-height: 1.5;
+}
+
+/* Color-specific styles */
+.bg-blue-50 { background-color: #eff6ff; }
+.bg-green-50 { background-color: #f0fdf4; }
+.bg-purple-50 { background-color: #faf5ff; }
+.bg-indigo-50 { background-color: #eef2ff; }
+.bg-yellow-50 { background-color: #fefce8; }
+.bg-red-50 { background-color: #fef2f2; }
+
+.text-blue-800 { color: #1e40af; }
+.text-green-800 { color: #166534; }
+.text-purple-800 { color: #6b21a8; }
+.text-indigo-800 { color: #3730a3; }
+.text-yellow-800 { color: #854d0e; }
+.text-red-800 { color: #991b1b; }
+
+/* Loading and error states */
+.loading-feedback {
+  min-height: 200px;
+  background-color: #ffffff;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.feedback-error {
+  margin: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive grid */
+@media (max-width: 768px) {
+  .feedback-container {
+    padding: 1rem;
   }
   
-  .feedback-container h2 {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: #4caf50;
+  .grid {
+    gap: 1rem;
   }
-  
-  .feedback-section {
-    margin-top: 20px;
-    padding: 15px;
-    border-radius: 8px;
-    background-color: #ffffff;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
-  
-  .feedback-section h3 {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: #007acc;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
-  
-  .feedback-section p,
-  .feedback-section ul {
-    margin: 5px 0;
-    color: #333333;
-  }
-  
-  .feedback-section ul {
-    padding-left: 20px;
-    list-style-type: disc;
-  }
-  
-  .feedback-error {
-    color: red;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  
-  .loading-feedback {
-    color: #007acc;
-    font-style: italic;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
+}
+
+.feedback-section {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Stats cards */
+.stats-card {
+  background-color: #ffffff;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.stats-card p:first-child {
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.stats-card p:last-child {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+/* Hover effects for interactive elements */
+button {
+  transition: all 0.2s ease-in-out;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Custom scrollbar for better UX */
+.feedback-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.feedback-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.feedback-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.feedback-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
   

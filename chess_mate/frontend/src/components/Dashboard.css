@@ -1,0 +1,168 @@
+/* Dashboard Container */
+.max-w-7xl {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+/* Stats Cards */
+.bg-white {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.bg-white:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Table Styles */
+.overflow-x-auto {
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb transparent;
+}
+
+.overflow-x-auto::-webkit-scrollbar {
+  height: 6px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background-color: #e5e7eb;
+  border-radius: 3px;
+}
+
+/* Table Row Hover Animation */
+tr.hover\:bg-gray-50 {
+  transition: background-color 0.2s ease-in-out;
+}
+
+/* Button Hover Effects */
+button {
+  transition: all 0.2s ease-in-out;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Stats Card Animations */
+.bg-blue-50,
+.bg-green-50 {
+  animation: slideIn 0.5s ease-out;
+}
+
+.bg-blue-50 {
+  animation-delay: 0.1s;
+}
+
+.bg-green-50 {
+  animation-delay: 0.2s;
+}
+
+/* Loading Animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Fade In Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Slide In Animation */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .grid-cols-1 {
+    gap: 1rem;
+  }
+  
+  .px-6 {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .bg-white {
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb;
+  }
+  
+  button {
+    display: none;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  .bg-white {
+    background-color: #1f2937;
+    color: #f3f4f6;
+  }
+  
+  .text-gray-900 {
+    color: #f3f4f6;
+  }
+  
+  .text-gray-600 {
+    color: #d1d5db;
+  }
+  
+  .border-gray-200 {
+    border-color: #374151;
+  }
+  
+  .bg-gray-50 {
+    background-color: #111827;
+  }
+  
+  .text-gray-500 {
+    color: #9ca3af;
+  }
+  
+  .hover\:bg-gray-50:hover {
+    background-color: #374151;
+  }
+  
+  .bg-blue-50 {
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+  
+  .bg-green-50 {
+    background-color: rgba(16, 185, 129, 0.1);
+  }
+} 

@@ -1,0 +1,40 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/chess_mate"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    target-branch: "main"
+    labels:
+      - "dependencies"
+      - "python"
+    reviewers:
+      - "ahmedmohamed200254"
+
+  # Node.js dependencies
+  - package-ecosystem: "npm"
+    directory: "/chess_mate/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    target-branch: "main"
+    labels:
+      - "dependencies"
+      - "javascript"
+    reviewers:
+      - "ahmedmohamed200254"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    target-branch: "main"
+    labels:
+      - "dependencies"
+      - "github_actions"
+    reviewers:
+      - "ahmedmohamed200254" 
