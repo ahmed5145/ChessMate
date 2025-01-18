@@ -156,7 +156,7 @@ export const fetchExternalGames = async (platform, username, gameType) => {
 export const analyzeSpecificGame = async (gameId) => {
   try {
     const response = await api.post(`/game/${gameId}/analysis/`);
-    return response.data.analysis;
+    return response.data;
   } catch (error) {
     throw error.response ? error.response.data : error.message;
   }

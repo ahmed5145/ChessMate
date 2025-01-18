@@ -36,15 +36,23 @@ class ChessComService:
         return []
 
     @staticmethod
-    def fetch_games(username: str, game_type: str) -> List[Dict[str, Any]]:
+    def fetch_games(username: str, game_type: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Fetch games for a given username and game type.
+        
+        Args:
+            username: The username to fetch games for
+            game_type: The type of games to fetch (bullet, blitz, rapid, classical, or all)
+            limit: Maximum number of games to fetch (default: 10)
         """
         archives = ChessComService.fetch_archives(username)
         games = []
         for archive_url in archives:
-            games.extend(ChessComService.fetch_games_from_archive(archive_url, game_type))
-        return games
+            new_games = ChessComService.fetch_games_from_archive(archive_url, game_type)
+            games.extend(new_games)
+            if len(games) >= limit:
+                break
+        return games[:limit]  # Ensure we don't return more than the limit
 
     @staticmethod
     def fetch_games_from_archive(archive_url: str, game_type: str) -> List[Dict[str, Any]]:
@@ -57,7 +65,10 @@ class ChessComService:
         response = requests.get(archive_url, headers=headers, timeout=10)
         if response.status_code == 200:
             games = response.json().get("games", [])
-            filtered_games = [game for game in games if game.get("time_class") == game_type]
+            if game_type == "all":
+                filtered_games = games
+            else:
+                filtered_games = [game for game in games if game.get("time_class") == game_type]
             print(f"Games fetched: {len(filtered_games)} {game_type} games.")
             return filtered_games
         elif response.status_code == 403:
@@ -73,21 +84,29 @@ class LichessService:
     BASE_URL = "https://lichess.org/api"
 
     @staticmethod
-    def fetch_games(username: str, game_type: str) -> List[Dict[str, Any]]:
+    def fetch_games(username: str, game_type: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Fetch games for a given username and game type.
+        
+        Args:
+            username: The username to fetch games for
+            game_type: The type of games to fetch (bullet, blitz, rapid, classical, or all)
+            limit: Maximum number of games to fetch (default: 10)
         """
         url = f"{LichessService.BASE_URL}/games/user/{username}"
         params = {
-            "max": 10,
-            "perfType": LichessService.map_game_type(game_type)
+            "max": limit,  # Set the limit in the API request
+            "perfType": LichessService.map_game_type(game_type) if game_type != "all" else None
         }
+        # Remove None values from params
+        params = {k: str(v) for k, v in params.items() if v is not None}
+        
         headers = {"Accept": "application/x-ndjson"}
 
         response = requests.get(url,
-                                headers=headers,
-                                params={k: str(v) for k, v in params.items()},
-                                timeout=10)
+                              headers=headers,
+                              params=params,
+                              timeout=10)
         response.raise_for_status()
 
         games = []
@@ -98,7 +117,9 @@ class LichessService:
                     games.extend(game_data)
                 else:
                     games.append(game_data)
-        return games
+            if len(games) >= limit:  # Stop once we have enough games
+                break
+        return games[:limit]  # Ensure we don't return more than the limit
 
     @staticmethod
     def map_game_type(chess_com_type: str) -> str:

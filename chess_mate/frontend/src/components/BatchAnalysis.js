@@ -2,8 +2,7 @@ import React, { useState, useEffect } from "react";
 import { analyzeBatchGames } from "../api";
 import { useNavigate, useLocation } from "react-router-dom";
 import { CheckCircle, AlertCircle, Clock, Info, Target, Loader, Activity, ChevronLeft } from "lucide-react";
-import { toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { toast } from "react-hot-toast";
 import "./BatchAnalysis.css";
 
 const BatchAnalysis = () => {

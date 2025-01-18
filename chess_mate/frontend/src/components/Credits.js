@@ -1,120 +1,165 @@
-import React, { useState, useEffect } from 'react';
-import { CreditCard, Package, Zap, Shield } from 'lucide-react';
-import { toast } from 'react-toastify';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { UserContext } from '../contexts/UserContext';
+import { toast } from 'react-hot-toast';
+import { CreditCard } from 'lucide-react';
 
-const CREDIT_PACKAGES = [
-  {
-    id: 'basic',
-    name: 'Basic',
-    credits: 10,
-    price: 4.99,
-    icon: Package,
-    description: 'Perfect for casual players',
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    credits: 50,
-    price: 19.99,
-    icon: Zap,
-    description: 'Most popular for regular players',
-    featured: true,
-  },
-  {
-    id: 'unlimited',
-    name: 'Elite',
-    credits: 200,
-    price: 49.99,
-    icon: Shield,
-    description: 'Best value for serious players',
-  },
-];
+const API_BASE_URL = 'http://localhost:8000/api';
 
 const Credits = () => {
-  const [credits, setCredits] = useState(0);
+  const navigate = useNavigate();
+  const { credits, setCredits } = useContext(UserContext);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchCredits();
-  }, []);
-
-  const fetchCredits = async () => {
+  const fetchCredits = useCallback(async () => {
     try {
-      const response = await fetch('/api/credits');
+      const accessToken = localStorage.getItem('tokens') ? JSON.parse(localStorage.getItem('tokens')).access : null;
+      if (!accessToken) {
+        console.error('No access token found');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/credits/`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch credits');
+      }
+
       const data = await response.json();
       setCredits(data.credits);
     } catch (error) {
       console.error('Error fetching credits:', error);
+      toast.error('Failed to fetch credits');
     }
-  };
+  }, [setCredits]);
+
+  useEffect(() => {
+    fetchCredits();
+    // Set up periodic refresh
+    const interval = setInterval(fetchCredits, 5000);
+    return () => clearInterval(interval);
+  }, [fetchCredits]);
 
   const handlePurchase = async (packageId) => {
     setLoading(true);
     try {
-      // TODO: Implement Stripe integration
-      const response = await fetch('/api/purchase-credits', {
+      const accessToken = localStorage.getItem('tokens') ? JSON.parse(localStorage.getItem('tokens')).access : null;
+      if (!accessToken) {
+        toast.error('Please log in to purchase credits');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/purchase-credits/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
         },
-        body: JSON.stringify({ packageId }),
+        body: JSON.stringify({
+          package_id: packageId
+        })
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error('Purchase failed');
+        throw new Error(data.error || 'Failed to create checkout session');
       }
 
-      const data = await response.json();
-      setCredits(data.newCredits);
-      toast.success('Credits purchased successfully!');
+      if (!data.checkout_url) {
+        throw new Error('No checkout URL received');
+      }
+
+      window.location.href = data.checkout_url;
     } catch (error) {
-      console.error('Error purchasing credits:', error);
-      toast.error('Failed to purchase credits. Please try again.');
+      console.error('Error processing request:', error);
+      toast.error(error.message || 'Failed to process request');
     } finally {
       setLoading(false);
     }
   };
 
+  const creditPackages = [
+    {
+      id: 'basic',
+      name: 'Basic Package',
+      credits: 100,
+      price: 9.99,
+      description: 'Perfect for casual players',
+      features: [
+        '100 game analyses',
+        'Basic feedback',
+        'Opening suggestions',
+        'Valid for 3 months'
+      ]
+    },
+    {
+      id: 'pro',
+      name: 'Pro Package',
+      credits: 300,
+      price: 24.99,
+      description: 'Great for regular analysis',
+      popular: true,
+      features: [
+        '300 game analyses',
+        'Detailed feedback',
+        'Opening & middlegame suggestions',
+        'Valid for 6 months'
+      ]
+    },
+    {
+      id: 'premium',
+      name: 'Premium Package',
+      credits: 1000,
+      price: 79.99,
+      description: 'Best value for serious players',
+      features: [
+        '1000 game analyses',
+        'Advanced feedback',
+        'Complete game analysis',
+        'Valid for 12 months'
+      ]
+    }
+  ];
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="text-center">
-        <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
-          Purchase Analysis Credits
-        </h2>
-        <p className="mt-4 text-xl text-gray-600">
+      <div className="sm:flex sm:flex-col sm:align-center">
+        <h2 className="text-3xl font-extrabold text-gray-900 sm:text-center">Purchase Analysis Credits</h2>
+        <p className="mt-5 text-xl text-gray-500 sm:text-center">
           Get credits to analyze your chess games and receive detailed feedback
         </p>
-      </div>
-
-      <div className="mt-8 flex items-center justify-center">
-        <div className="inline-flex items-center px-4 py-2 rounded-md bg-gray-100">
-          <CreditCard className="h-5 w-5 text-gray-500 mr-2" />
-          <span className="text-gray-900 font-medium">{credits} credits remaining</span>
+        <div className="mt-4 text-center">
+          <span className="inline-flex items-center px-4 py-2 rounded-md bg-indigo-50 text-indigo-700">
+            <CreditCard className="h-5 w-5 mr-2" />
+            You currently have {credits} credits available
+          </span>
         </div>
       </div>
 
       <div className="mt-12 space-y-4 sm:mt-16 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-6 lg:max-w-4xl lg:mx-auto xl:max-w-none xl:mx-0 xl:grid-cols-3">
-        {CREDIT_PACKAGES.map((pkg) => (
+        {creditPackages.map((pkg) => (
           <div
             key={pkg.id}
             className={`rounded-lg shadow-sm divide-y divide-gray-200 ${
-              pkg.featured
+              pkg.popular
                 ? 'border-2 border-indigo-500 relative'
                 : 'border border-gray-200'
             }`}
           >
-            {pkg.featured && (
+            {pkg.popular && (
               <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2">
                 <span className="inline-flex rounded-full bg-indigo-100 px-4 py-1 text-xs font-semibold text-indigo-600">
-                  Popular
+                  Most Popular
                 </span>
               </div>
             )}
             <div className="p-6">
-              <div className="flex items-center">
-                <pkg.icon className={`h-8 w-8 ${pkg.featured ? 'text-indigo-500' : 'text-gray-500'}`} />
-                <h3 className="ml-4 text-xl font-semibold text-gray-900">{pkg.name}</h3>
-              </div>
+              <h3 className="text-lg leading-6 font-medium text-gray-900">{pkg.name}</h3>
               <p className="mt-4 text-sm text-gray-500">{pkg.description}</p>
               <p className="mt-8">
                 <span className="text-4xl font-extrabold text-gray-900">${pkg.price}</span>
@@ -124,11 +169,11 @@ const Credits = () => {
                 onClick={() => handlePurchase(pkg.id)}
                 disabled={loading}
                 className={`mt-8 block w-full bg-${
-                  pkg.featured ? 'indigo' : 'gray'
+                  pkg.popular ? 'indigo' : 'gray'
                 }-600 hover:bg-${
-                  pkg.featured ? 'indigo' : 'gray'
+                  pkg.popular ? 'indigo' : 'gray'
                 }-700 text-white font-medium py-2 px-4 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-${
-                  pkg.featured ? 'indigo' : 'gray'
+                  pkg.popular ? 'indigo' : 'gray'
                 }-500 transition-colors ${
                   loading ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
@@ -139,57 +184,23 @@ const Credits = () => {
             <div className="px-6 pt-6 pb-8">
               <h4 className="text-sm font-medium text-gray-900">What's included</h4>
               <ul className="mt-6 space-y-4">
-                <li className="flex space-x-3">
-                  <svg
-                    className="flex-shrink-0 h-5 w-5 text-green-500"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span className="text-sm text-gray-500">
-                    {pkg.credits} game analyses
-                  </span>
-                </li>
-                <li className="flex space-x-3">
-                  <svg
-                    className="flex-shrink-0 h-5 w-5 text-green-500"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span className="text-sm text-gray-500">
-                    Detailed game feedback
-                  </span>
-                </li>
-                <li className="flex space-x-3">
-                  <svg
-                    className="flex-shrink-0 h-5 w-5 text-green-500"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span className="text-sm text-gray-500">
-                    AI-powered analysis
-                  </span>
-                </li>
+                {pkg.features.map((feature, index) => (
+                  <li key={index} className="flex space-x-3">
+                    <svg
+                      className="flex-shrink-0 h-5 w-5 text-green-500"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    <span className="text-sm text-gray-500">{feature}</span>
+                  </li>
+                ))}
               </ul>
             </div>
           </div>

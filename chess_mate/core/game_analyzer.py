@@ -12,6 +12,8 @@ import chess.engine
 import chess.pgn
 from django.db import DatabaseError
 from .models import Game
+from datetime import datetime
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -29,150 +31,116 @@ class GameAnalyzer:
             logger.error("Failed to initialize Stockfish engine: %s", str(e))
             raise
 
-    def analyze_games(self, games, depth=20):
-        """
-        Analyze one or multiple games.
-
-        Args:
-            games (Union[Game, QuerySet]): A single Game object or a QuerySet of Game objects.
-            depth (int): Analysis depth.
-
-        Returns:
-            Dict: Mapping of game IDs to their analysis results.
-        """
-        if isinstance(games, Game):
-            games = [games]
-
-        analysis_results = {}
+    def analyze_move(self, board, move, depth=20):
+        """Analyze a single move and return the evaluation."""
         try:
-            with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
-                engine.configure({"Threads": 2, "Hash": 128})
-                for game in games:
-                    if not game.pgn:
-                        logger.warning("Game %s has no PGN. Skipping.", game.id)
-                        continue
+            start_time = datetime.utcnow()
+            result = self.engine.analyse(board, chess.engine.Limit(depth=depth))
+            time_spent = (datetime.utcnow() - start_time).total_seconds()
+            
+            # Get the score, using PovScore for proper initialization
+            score_obj = result.get("score", chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
+            score = score_obj.relative.score()
+            is_mate = score_obj.relative.is_mate()
+            
+            return {
+                "move": move.uci(),
+                "score": score if not is_mate else (20000 if score > 0 else -20000),
+                "depth": result.get("depth", 0),
+                "time_spent": time_spent,
+                "is_mate": is_mate,
+                "is_capture": board.is_capture(move),
+                "move_number": board.fullmove_number
+            }
+        except Exception as e:
+            logger.error("Error analyzing move: %s", str(e))
+            return None
 
-                    if game.analysis:
-                        logger.info(
-                            "Analysis for game %s already exists. Returning existing analysis.",
-                            game.id
-                        )
-                        analysis_results[game.id] = game.analysis
-                        continue
-
-                    try:
-                        player_color = "white" if game.is_white else "black"
-                        results, opening_name = self._analyze_single_game(game.pgn, player_color, depth, engine)
-                        game.opening_name = opening_name  # Save the opening name
-                        self.save_analysis_to_db(game, results)
-                        analysis_results[game.id] = results
-                    except (ValueError, chess.engine.EngineError) as e:
-                        logger.error("Error analyzing game %s: %s", game.id, str(e))
-                        continue
-        except (chess.engine.EngineError, ValueError) as e:
-            logger.error("Error initializing Stockfish engine: %s", str(e))
-            raise
-        finally:
-            self.close_engine()  # Ensure the engine is closed after analysis
-        return analysis_results
-
-    def _analyze_single_game(self, game_pgn, player_color="white", depth=20, engine=None):
+    def analyze_games(self, games: List[Game], depth: int = 20) -> Dict[int, List[Dict[str, Any]]]:
         """
-        Analyze a single game from PGN format.
-
+        Analyze a list of games.
+        
         Args:
-            game_pgn (str): The game's PGN string.
-            depth (int): Analysis depth.
-            engine (chess.engine.SimpleEngine): The Stockfish engine instance.
-
+            games: List of Game objects to analyze
+            depth: Depth of analysis (default: 20)
+            
         Returns:
-            List[dict]: List of analysis results for each move.
+            Dictionary mapping game IDs to their analysis results
+            
+        Raises:
+            ValueError: If no games are provided or if any game has invalid PGN data
         """
+        if not games:
+            raise ValueError("No games provided for analysis")
+            
+        results = {}
+        for game in games:
+            try:
+                results[game.id] = self.analyze_single_game(game, depth)
+            except Exception as e:
+                logger.error(f"Error analyzing game {game.id}: {str(e)}")
+                continue
+        return results
+
+    def analyze_single_game(self, game: Game, depth: int = 20) -> List[Dict[str, Any]]:
+        """
+        Analyze a single game.
+        
+        Args:
+            game: Game object to analyze
+            depth: Depth of analysis (default: 20)
+            
+        Returns:
+            List of dictionaries containing analysis data for each move
+            
+        Raises:
+            ValueError: If the game has no PGN data or if PGN is invalid
+        """
+        if not game.pgn:
+            raise ValueError("No PGN data provided for analysis")
+
+        board = chess.Board()
+        moves = []
+        analysis = []
+        last_score = 0
+        
+        # Parse moves from PGN
         try:
-            game_pgn = game_pgn.strip().replace("\r\n", "\n")
-            pgn_stream = io.StringIO(game_pgn)
-            game = chess.pgn.read_game(pgn_stream)
-            if not game:
-                raise ValueError("Invalid PGN format")
-
-            # Extract and format opening from PGN headers
-            opening_url = game.headers.get("ECOUrl", "Unknown Opening")
-            if "openings/" in opening_url:
-                opening_name = opening_url.split("openings/")[1].replace("-", " ")
-            else:
-                opening_name = game.headers.get("Opening", "Unknown Opening")
-
-            board = game.board()
-            if not board:
-                raise ValueError("Failed to initialize board from PGN")
-
-            analysis_results = []
-            last_score = None
-            critical_positions = []
-            time_controls = game.headers.get("TimeControl", "").split("+")
-            initial_time = int(time_controls[0]) if time_controls and time_controls[0].isdigit() else 600
-            increment = int(time_controls[1]) if len(time_controls) > 1 and time_controls[1].isdigit() else 0
-
-            for move_number, node in enumerate(game.mainline(), start=1):
-                move = node.move
-                if not board.is_legal(move):
-                    raise ValueError(f"Illegal move {move.uci()} encountered in position: {board.fen()}")
+            pgn = chess.pgn.read_game(io.StringIO(game.pgn))
+            if not pgn:
+                raise ValueError("Invalid PGN data: Could not parse game")
+                    
+            # Collect moves
+            while pgn.next():
+                moves.append(pgn.next().move)
+                pgn = pgn.next()
+            
+            if not moves:
+                raise ValueError("Invalid PGN data: No moves found")
+        except Exception as e:
+            raise ValueError(f"Invalid PGN data: {str(e)}")
+        
+        # Analyze each move
+        for move in moves:
+            move_analysis = self.analyze_move(board, move, depth)
+            if move_analysis:
+                # Calculate evaluation drop and mark critical moves
+                current_score = move_analysis["score"]
+                eval_drop = last_score - current_score
                 
-                # Time management analysis
-                time_left = node.clock() if hasattr(node, "clock") else None
-                time_spent = node.clock() - last_time if hasattr(node, "clock") and last_time is not None else None
-                last_time = node.clock() if hasattr(node, "clock") else None
-
-                board.push(move)
-                info = engine.analyse(board, chess.engine.Limit(depth=depth))
-                score = (
-                    info["score"].white().score(mate_score=10000)
-                    if player_color == "white"
-                    else info["score"].black().score(mate_score=10000)
-                )
-
-                # Evaluate position criticality
-                is_critical = False
-                if last_score is not None:
-                    score_diff = abs(score - last_score)
-                    if score_diff > 200 or board.is_check() or board.is_capture(move):
-                        is_critical = True
-                        critical_positions.append(move_number)
-
-                evaluation_trend = None
-                if last_score is not None:
-                    if score > last_score + 50:
-                        evaluation_trend = "improving"
-                    elif score < last_score - 50:
-                        evaluation_trend = "worsening"
-                    else:
-                        evaluation_trend = "neutral"
-
-                last_score = score
-
-                # Enhanced move analysis
-                analysis_results.append({
-                    "move": board.san(move) if board.is_legal(move) else move.uci(),
-                    "score": score,
-                    "depth": depth,
-                    "is_capture": board.is_capture(move),
-                    "is_check": board.is_check(),
-                    "is_critical": is_critical,
-                    "move_number": move_number,
-                    "evaluation_trend": evaluation_trend,
-                    "time_spent": time_spent,
-                    "time_left": time_left,
-                    "piece_moved": board.piece_at(move.from_square).symbol() if board.piece_at(move.from_square) else None,
-                    "position_complexity": len(list(board.legal_moves))
+                move_analysis.update({
+                    "evaluation_drop": eval_drop,
+                    "is_mistake": eval_drop > 200,  # More than 2 pawns drop
+                    "is_blunder": eval_drop > 400,  # More than 4 pawns drop
+                    "is_critical": abs(current_score) > 150 or abs(eval_drop) > 150
                 })
-
-            return analysis_results, opening_name
-        except ValueError as ve:
-            logger.error("Error analyzing single game (ValueError): %s", str(ve))
-            raise
-        except chess.engine.EngineError as e:
-            logger.error("Error analyzing single game: %s", str(e))
-            raise
+                
+                analysis.append(move_analysis)
+                last_score = current_score
+            
+            board.push(move)
+        
+        return analysis
 
     def save_analysis_to_db(self, game, analysis_results):
         """

@@ -1,156 +1,175 @@
-import React, { useState } from 'react';
-import { Download, CreditCard, AlertCircle } from 'lucide-react';
-import { toast } from 'react-toastify';
-import { fetchExternalGames } from '../api';
+import React, { useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { UserContext } from '../contexts/UserContext';
+import { toast } from 'react-hot-toast';
 
-const FetchGames = ({ onGamesFetched }) => {
+const API_BASE_URL = 'http://localhost:8000/api';
+
+const CREDITS_PER_GAME = 1; // Each game fetch costs 1 credit
+
+const FetchGames = () => {
+  const [platform, setPlatform] = useState('chess.com');
   const [username, setUsername] = useState('');
-  const [platform, setPlatform] = useState('chesscom');
   const [loading, setLoading] = useState(false);
-  const [credits, setCredits] = useState(0);
+  const [gameMode, setGameMode] = useState('all');
+  const [numGames, setNumGames] = useState(10);
+  const { credits } = useContext(UserContext);
+  const navigate = useNavigate();
 
-  const fetchCredits = async () => {
-    try {
-      const response = await fetch('/api/credits');
-      const data = await response.json();
-      setCredits(data.credits);
-    } catch (error) {
-      console.error('Error fetching credits:', error);
-    }
-  };
-
-  React.useEffect(() => {
-    fetchCredits();
-  }, []);
-
-  const handleFetchGames = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username) {
-      toast.error('Please enter a username');
-      return;
-    }
-
-    if (credits <= 0) {
-      toast.error('Insufficient credits. Please purchase more credits to fetch games.');
-      return;
-    }
-
     setLoading(true);
+
     try {
-      const games = await fetchExternalGames(platform, username);
-      
-      if (games.length > credits) {
-        toast.warning(`You only have ${credits} credits. Only the first ${credits} games will be fetched.`);
+      const accessToken = localStorage.getItem('tokens') ? JSON.parse(localStorage.getItem('tokens')).access : null;
+      if (!accessToken) {
+        toast.error('Please log in to fetch games');
+        return;
       }
 
-      // Deduct credits
-      const creditsToDeduct = Math.min(games.length, credits);
-      await fetch('/api/credits/deduct', {
+      // Check if user has enough credits
+      if (credits < numGames) {
+        toast.error(`Not enough credits. Required: ${numGames}, Available: ${credits}`);
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/fetch-games/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: creditsToDeduct })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          platform,
+          username,
+          game_mode: gameMode,
+          num_games: numGames
+        })
       });
 
-      await fetchCredits(); // Refresh credits
-      if (onGamesFetched) {
-        onGamesFetched();
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch games');
       }
-      toast.success(`Successfully fetched ${games.length} games!`);
+
+      toast.success(data.message);
+      navigate('/games');
     } catch (error) {
       console.error('Error fetching games:', error);
-      toast.error('Failed to fetch games. Please try again.');
+      toast.error(error.message || 'Failed to fetch games');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-white shadow-lg rounded-lg p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">Fetch Chess Games</h2>
-        <div className="flex items-center space-x-2">
-          <CreditCard className="w-5 h-5 text-indigo-500" />
-          <span className="text-sm font-medium text-gray-700">
-            {credits} credits remaining
-          </span>
-        </div>
-      </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-white shadow sm:rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <h3 className="text-lg font-medium leading-6 text-gray-900">Import Chess Games</h3>
+            <div className="mt-2 max-w-xl text-sm text-gray-500">
+              <p>Enter your chess platform username to import your games for analysis.</p>
+              <p className="mt-1">You have {credits} credits available.</p>
+              <p className="mt-1">Cost: 1 credit per game</p>
+            </div>
+            <form onSubmit={handleSubmit} className="mt-5">
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="platform" className="block text-sm font-medium text-gray-700">
+                    Platform
+                  </label>
+                  <select
+                    id="platform"
+                    value={platform}
+                    onChange={(e) => setPlatform(e.target.value)}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                  >
+                    <option value="chess.com">Chess.com</option>
+                    <option value="lichess">Lichess</option>
+                  </select>
+                </div>
 
-      {credits === 0 && (
-        <div className="mb-4 p-4 bg-yellow-50 rounded-md">
-          <div className="flex">
-            <AlertCircle className="h-5 w-5 text-yellow-400" />
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800">
-                No credits available
-              </h3>
-              <div className="mt-2 text-sm text-yellow-700">
-                <p>Purchase credits to fetch and analyze games.</p>
+                <div>
+                  <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+                    Username
+                  </label>
+                  <input
+                    type="text"
+                    id="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="Enter your username"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="gameMode" className="block text-sm font-medium text-gray-700">
+                    Game Mode
+                  </label>
+                  <select
+                    id="gameMode"
+                    value={gameMode}
+                    onChange={(e) => setGameMode(e.target.value)}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                  >
+                    <option value="all">All Game Types</option>
+                    <option value="bullet">Bullet</option>
+                    <option value="blitz">Blitz</option>
+                    <option value="rapid">Rapid</option>
+                    <option value="classical">Classical</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="numGames" className="block text-sm font-medium text-gray-700">
+                    Number of Games
+                  </label>
+                  <div className="mt-1 relative rounded-md shadow-sm">
+                    <input
+                      type="number"
+                      id="numGames"
+                      value={numGames}
+                      onChange={(e) => setNumGames(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                      className="block w-full pr-12 border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      placeholder="10"
+                      min="1"
+                      max="100"
+                      required
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <span className="text-gray-500 sm:text-sm">games</span>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-sm text-gray-500">Total cost: {numGames} credits</p>
+                </div>
+              </div>
+
+              <div className="mt-5">
                 <button
-                  onClick={() => {/* TODO: Implement redirect to pricing page */}}
-                  className="mt-2 text-sm font-medium text-yellow-800 hover:text-yellow-900"
+                  type="submit"
+                  disabled={loading || !username}
+                  className={`inline-flex items-center justify-center w-full px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                    (loading || !username) && 'opacity-50 cursor-not-allowed'
+                  }`}
                 >
-                  View pricing →
+                  {loading ? (
+                    <>
+                      <div className="spinner-small mr-2" />
+                      Fetching Games...
+                    </>
+                  ) : (
+                    'Import Games'
+                  )}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
-      )}
-
-      <form onSubmit={handleFetchGames} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Chess Platform
-          </label>
-          <select
-            value={platform}
-            onChange={(e) => setPlatform(e.target.value)}
-            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-          >
-            <option value="chesscom">Chess.com</option>
-            <option value="lichess">Lichess</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Username
-          </label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            placeholder={`Enter your ${platform === 'chesscom' ? 'Chess.com' : 'Lichess'} username`}
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading || credits === 0}
-          className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-            loading || credits === 0
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-          }`}
-        >
-          {loading ? (
-            <span className="flex items-center">
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Fetching games...
-            </span>
-          ) : (
-            <span className="flex items-center">
-              <Download className="w-5 h-5 mr-2" />
-              Fetch Games
-            </span>
-          )}
-        </button>
-      </form>
+      </div>
     </div>
   );
 };

@@ -5,39 +5,28 @@
 [![GitHub issues](https://img.shields.io/github/issues/ahmed5145/chessmate.svg)](https://github.com/ahmed5145/chessmate/issues)
 ![GitHub last commit](https://img.shields.io/github/last-commit/ahmed5145/chessmate)
 
-# ChessMate
+# ChessMate - Advanced Chess Game Analysis Platform
 
-ChessMate is a web application designed to analyze chess games from chess.com and lichess, providing personalized insights and recommendations for improvement. Whether you're a beginner or an experienced player, ChessMate helps you understand your strengths and weaknesses through detailed game analysis and, more importantly, through analysis of your recent collective games -- not just one game!
-
-## Table of Contents
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Installation](#installation)
-- [Usage](#usage)
-- [API Documentation](#api-documentation)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
-- [Roadmap](#roadmap)
+ChessMate is a sophisticated chess analysis platform that combines the power of the Stockfish engine with modern web technologies to provide detailed game analysis and personalized feedback.
 
 ## Features
-- **Game Analysis**: Analyze games from chess.com and lichess profiles.
-- **Detailed Metrics**: Insights on time management, opening performance, tactical accuracy, resourcefulness, and endgame strategies.
-- **Customizable Packages**: Choose analysis packages ranging from 50 to 1000 games.
-- **Downloadable Reports**: Export analysis results in PDF or CSV formats.
-- **Personalized Recommendations**: Tailored suggestions for improvement based on analysis.
-- **User Dashboard**: Access your analysis history and track your progress.
 
-## Tech Stack
-- **Frontend**: React.js
-- **Backend**: Django
-- **Database**: PostgreSQL or MongoDB
-- **Authentication**: OAuth and JWT
-- **Payment Integration**: Stripe or PayPal
-- **Analysis Tools**: python-chess and Stockfish
+- **Game Analysis**: Detailed analysis of chess games using Stockfish engine
+- **Personalized Feedback**: AI-powered feedback on your games
+- **Credit System**: Flexible credit packages for game analysis
+- **Multi-Platform Support**: Import games from Chess.com and Lichess
+- **Modern UI**: Responsive design with real-time updates
+- **Secure Authentication**: JWT-based authentication system
+
+## Prerequisites
+
+- Python 3.8+
+- Node.js 14+
+- Redis Server
+- Stockfish Chess Engine
+- PostgreSQL (optional, SQLite by default)
 
 ## Installation
-Follow these steps to set up the project locally:
 
 1. **Clone the repository**:
    ```bash
@@ -63,14 +52,33 @@ Follow these steps to set up the project locally:
 3. **Set up environment variables**:
    ```bash
    cp .env.example .env
-   # Edit .env with your configuration
+   # Edit .env with your configuration:
+   # - Set up email credentials
+   # - Add OpenAI API key
+   # - Configure Stripe keys
+   # - Set Stockfish path
    ```
 
-4. **Run development servers**:
+4. **Initialize the database**:
+   ```bash
+   python manage.py makemigrations
+   python manage.py migrate
+   ```
+
+5. **Start Redis Server**:
+   ```bash
+   redis-server
+   ```
+
+6. **Start Celery Worker**:
+   ```bash
+   celery -A chess_mate worker -l info
+   ```
+
+7. **Run development servers**:
    - **Backend**:
      ```bash
-     cd chessmate
-     python manage.py migrate
+     cd chess_mate
      python manage.py runserver
      ```
 
@@ -81,34 +89,54 @@ Follow these steps to set up the project locally:
      ```
 
 ## Usage
-1. **Create an account** or sign in using your email and password.
-2. **Select an analysis package** that suits your needs.
-3. **Choose games** from your profile for analysis.
-4. **Complete the payment** process.
-5. **View detailed analysis** in your user dashboard.
+
+1. **Create an account** or sign in using your email and password
+2. **Purchase analysis credits** from available packages
+3. **Import games** from Chess.com or Lichess
+4. **Select games** for analysis
+5. **View detailed analysis** including:
+   - Move accuracy
+   - Critical moments
+   - Improvement suggestions
+   - Opening recommendations
+   - Time management feedback
+
+## Testing
+
+- **Backend Tests**:
+  ```bash
+  cd chess_mate
+  python -m pytest
+  ```
+
+- **Frontend Tests**:
+  ```bash
+  cd frontend
+  npm test
+  ```
 
 ## API Documentation
-API documentation is available at `/api/docs` after starting the server. This documentation provides details on available endpoints, request/response formats, and authentication methods.
+
+See [API Documentation](docs/api.md) for detailed endpoint information.
 
 ## Contributing
-We welcome contributions! To contribute to ChessMate, please follow these steps:
-1. **Fork the repository**.
-2. **Create a feature branch**: `git checkout -b feature/name`.
-3. **Commit your changes**: `git commit -am 'Add feature'`.
-4. **Push to your branch**: `git push origin feature/name`.
-5. **Create a Pull Request**.
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
-This project is licensed under the [MIT License](LICENSE).
 
-## Contact
-For support or questions, please reach out to [ahmedmohamed200354@gmail.com](mailto:ahmedmohamed200354@gmail.com).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Roadmap
-- **Real-time Game Analysis**: Provide live feedback during ongoing games.
-- **AI-Powered Coaching**: Implement machine learning for personalized recommendations.
-- **Community Features**: Enable users to share and discuss their analyses.
-- **Mobile Application**: Develop a mobile version of ChessMate for on-the-go analysis.
+## Acknowledgments
+
+- Stockfish Chess Engine
+- OpenAI API
+- Chess.com API
+- Lichess API
 
 ---
 *Document generated on January 3, 2025*  

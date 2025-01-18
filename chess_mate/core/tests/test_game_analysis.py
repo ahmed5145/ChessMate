@@ -24,6 +24,9 @@ def user():
             password='testpass123',
             email=f'{username}@test.com'
         )
+        # Delete any existing profile for this user
+        Profile.objects.filter(user=user).delete()
+        # Create new profile
         Profile.objects.create(user=user, credits=10)
         return user
 
@@ -32,7 +35,7 @@ def user():
 def game(user):
     with transaction.atomic():
         return Game.objects.create(
-            player=user,
+            player=user,  # Using User instance directly
             game_url=f'https://chess.com/game/{uuid.uuid4().hex}',
             played_at=datetime.now(),
             opponent='opponent1',
@@ -53,29 +56,28 @@ def game_analyzer():
 
 @pytest.mark.django_db(transaction=True)
 class TestGameAnalysis:
-    @pytest.mark.django_db
     def test_analyze_game_view_unauthorized(self, api_client, game):
         url = reverse('analyze_game', args=[game.id])
         response = api_client.post(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    @pytest.mark.django_db
     def test_analyze_game_view_authorized(self, api_client, user, game):
         api_client.force_authenticate(user=user)
         url = reverse('analyze_game', args=[game.id])
-        response = api_client.post(url)
-        assert response.status_code == status.HTTP_200_OK
-        assert 'analysis' in response.data
-        assert 'feedback' in response.data
+        try:
+            response = api_client.post(url)
+            assert response.status_code == status.HTTP_200_OK
+            assert 'analysis' in response.data
+            assert 'feedback' in response.data
+        except chess.engine.EngineTerminatedError:
+            pytest.skip("Stockfish engine not available")
 
-    @pytest.mark.django_db
     def test_analyze_game_view_not_found(self, api_client, user):
         api_client.force_authenticate(user=user)
         url = reverse('analyze_game', args=[999])
         response = api_client.post(url)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    @pytest.mark.django_db
     def test_analyze_game_view_insufficient_credits(self, api_client, user, game):
         with transaction.atomic():
             profile = Profile.objects.get(user=user)
@@ -84,32 +86,55 @@ class TestGameAnalysis:
 
             api_client.force_authenticate(user=user)
             url = reverse('analyze_game', args=[game.id])
-            response = api_client.post(url)
-            assert response.status_code == status.HTTP_400_BAD_REQUEST
-            assert 'error' in response.data
-            assert 'insufficient credits' in response.data['error'].lower()
+            try:
+                response = api_client.post(url)
+                assert response.status_code == status.HTTP_400_BAD_REQUEST
+                assert 'error' in response.data
+                assert 'insufficient credits' in response.data['error'].lower()
+            except chess.engine.EngineTerminatedError:
+                pytest.skip("Stockfish engine not available")
 
-    @pytest.mark.django_db
     def test_analyze_batch_games_view(self, api_client, user, game):
         api_client.force_authenticate(user=user)
         url = reverse('batch_analyze_games')
-        response = api_client.post(url, {'num_games': 1})
-        assert response.status_code == status.HTTP_200_OK
-        assert 'results' in response.data
-        assert 'individual_games' in response.data['results']
-        assert 'overall_stats' in response.data['results']
+        try:
+            response = api_client.post(url, {'num_games': 1})
+            assert response.status_code == status.HTTP_200_OK
+            assert 'results' in response.data
+            assert 'individual_games' in response.data['results']
+            assert 'overall_stats' in response.data['results']
+            
+            # Check empty results structure
+            overall_stats = response.data['results']['overall_stats']
+            assert 'total_games' in overall_stats
+            assert 'wins' in overall_stats
+            assert 'losses' in overall_stats
+            assert 'draws' in overall_stats
+            assert 'average_accuracy' in overall_stats
+            assert 'common_mistakes' in overall_stats
+            assert 'improvement_areas' in overall_stats
+            assert 'strengths' in overall_stats
+            
+            # Verify common_mistakes structure
+            common_mistakes = overall_stats['common_mistakes']
+            assert 'blunders' in common_mistakes
+            assert 'mistakes' in common_mistakes
+            assert 'inaccuracies' in common_mistakes
+            assert 'time_pressure' in common_mistakes
+        except chess.engine.EngineTerminatedError:
+            pytest.skip("Stockfish engine not available")
 
     def test_game_analyzer_initialization(self, game_analyzer):
         assert game_analyzer is not None
 
-    @pytest.mark.django_db
     def test_game_analyzer_feedback_generation(self, game_analyzer, game):
         try:
             analysis_results = game_analyzer.analyze_games([game])
             feedback = game_analyzer.generate_feedback(analysis_results[game.id])
             
             assert isinstance(feedback, dict)
-            assert 'accuracy' in feedback
+            assert 'opening' in feedback
+            assert 'accuracy' in feedback['opening']
             assert 'mistakes' in feedback
             assert 'blunders' in feedback
             assert 'time_management' in feedback
@@ -119,5 +144,22 @@ class TestGameAnalysis:
             pytest.skip("Stockfish engine not available")
 
     def test_game_analyzer_error_handling(self, game_analyzer):
-        with pytest.raises(ValueError):
-            game_analyzer.analyze_games([]) 
+        try:
+            # Test with empty list
+            with pytest.raises(ValueError, match="No games provided for analysis"):
+                game_analyzer.analyze_games([])
+
+            # Test with invalid PGN
+            invalid_game = Game(
+                player=User.objects.create_user(username=f'testuser_{uuid.uuid4().hex[:8]}'),
+                game_url=f'https://chess.com/game/{uuid.uuid4().hex}',
+                played_at=datetime.now(),
+                opponent='opponent1',
+                result='win',
+                pgn='invalid pgn',
+                is_white=True
+            )
+            with pytest.raises(ValueError, match="Invalid PGN data: No moves found"):
+                game_analyzer.analyze_single_game(invalid_game)
+        except chess.engine.EngineTerminatedError:
+            pytest.skip("Stockfish engine not available") 

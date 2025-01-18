@@ -1,40 +1,51 @@
 from django.test import TestCase
-
-from django.test import TestCase
-from .models import Game, Player
-from .utils import analyze_game, generate_feedback
-import tempfile
+from django.contrib.auth.models import User
+from .models import Game, Profile
+from datetime import datetime
+import uuid
+import chess
+from .game_analyzer import GameAnalyzer
 
 class FeedbackTestCase(TestCase):
     def setUp(self):
-        player = Player.objects.create(username="test_user")
+        # Create a user first
+        self.user = User.objects.create_user(
+            username=f"test_user_{uuid.uuid4().hex[:8]}",
+            password="test_pass",
+            email="test@example.com"
+        )
+        # Delete any existing profile for this user
+        Profile.objects.filter(user=self.user).delete()
+        # Create a profile for the user
+        Profile.objects.create(user=self.user, credits=10)
+        # Create a game using the user
         self.game = Game.objects.create(
-            player=player,
-            game_url="https://example.com/game",
+            player=self.user,
+            game_url=f"https://example.com/game/{uuid.uuid4().hex}",
             played_at="2025-01-01T12:00:00Z",
             opponent="test_opponent",
             result="win",
             pgn="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7",
             is_white=True
         )
-        self.pgn_content = """
-        [Event "Test Game"]
-        [Site "Example.com"]
-        [Date "2025.01.01"]
-        [Round "1"]
-        [White "Player1"]
-        [Black "Player2"]
-        [Result "1-0"]
-
-        1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 1-0
-        """
 
     def test_feedback_generation(self):
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmp:
-            tmp.write(self.pgn_content)
-            tmp.seek(0)
-            analysis, _ = analyze_game(tmp)
-            feedback = generate_feedback(analysis, self.game.is_white)
+        try:
+            analyzer = GameAnalyzer()
+            analysis_results = analyzer.analyze_games([self.game])
+            feedback = analyzer.generate_feedback(analysis_results[self.game.id])
+            
+            self.assertIsInstance(feedback, dict)
             self.assertIn('opening', feedback)
-            self.assertIn('inaccuracies', feedback)
+            self.assertIn('accuracy', feedback['opening'])
+            self.assertIn('mistakes', feedback)
+            self.assertIn('blunders', feedback)
+            self.assertIn('time_management', feedback)
+            self.assertIn('tactical_opportunities', feedback)
+            self.assertIsInstance(feedback['tactical_opportunities'], list)
+        except chess.engine.EngineTerminatedError:
+            self.skipTest("Stockfish engine not available")
+        finally:
+            if analyzer:
+                analyzer.close_engine()
 
