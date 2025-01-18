@@ -5,7 +5,7 @@ from django.conf import settings
 import pytest
 from unittest.mock import MagicMock, patch
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
-from openai.types import Completion
+from openai.types.chat.chat_completion import Choice
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -35,7 +35,7 @@ def mock_openai_response():
         function_call=None,
         tool_calls=None
     )
-    choice = Completion.Choice(
+    choice = Choice(
         finish_reason="stop",
         index=0,
         message=message,

@@ -9,6 +9,17 @@
 
 ChessMate is a sophisticated chess analysis platform that combines the power of the Stockfish engine with modern web technologies to provide detailed game analysis and personalized feedback.
 
+## Navigation
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Testing](#testing)
+- [API Documentation](#api-documentation)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
+
 ## Features
 
 - **Game Analysis**: Detailed analysis of chess games using Stockfish engine
@@ -139,5 +150,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Lichess API
 
 ---
-*Document generated on January 3, 2025*  
-*Copyright © 2025 ChessMate. All rights reserved.*
+*Document last updated on January 18, 2024*  
+*Copyright © 2024 ChessMate. All rights reserved.*
