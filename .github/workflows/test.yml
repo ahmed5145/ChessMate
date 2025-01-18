@@ -45,7 +45,7 @@ jobs:
     - name: Run tests
       run: |
         cd chess_mate
-        python -m pytest --cov=./ --cov-report=xml ../core/tests/
+        python -m pytest --cov=./ --cov-report=xml core/tests/
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v2
