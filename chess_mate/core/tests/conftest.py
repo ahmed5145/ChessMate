@@ -24,7 +24,15 @@ def pytest_configure():
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': ':memory:'
         }
-    } 
+    }
+    
+    # Set required environment variables for testing
+    os.environ.setdefault('OPENAI_API_KEY', 'test-key')
+    os.environ.setdefault('STRIPE_SECRET_KEY', 'test-stripe-secret-key')
+    os.environ.setdefault('STRIPE_PUBLIC_KEY', 'test-stripe-public-key')
+    os.environ.setdefault('STOCKFISH_PATH', '/mock/path/to/stockfish')
+    os.environ.setdefault('SECRET_KEY', 'test-django-secret-key')
+    os.environ.setdefault('DEBUG', 'True')
 
 # Create a mock OpenAI response
 @pytest.fixture
