@@ -229,6 +229,7 @@ else:
     EMAIL_USE_TLS = False
     EMAIL_HOST_USER = ''
     EMAIL_HOST_PASSWORD = ''
+    DEFAULT_FROM_EMAIL = ''
 
 # Make sure email settings are loaded
 if not all([EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, DEFAULT_FROM_EMAIL]):
