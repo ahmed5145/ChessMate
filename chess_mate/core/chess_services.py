@@ -11,6 +11,7 @@ import requests
 import ndjson  # type: ignore
 import httpx
 import logging
+import re
 
 from .models import Game
 
@@ -40,34 +41,63 @@ class ChessComService:
         return []
 
     @staticmethod
-    def _extract_pgn_info(pgn: str) -> Dict[str, Any]:
-        """Extract information from PGN headers."""
-        info = {}
-        try:
-            # Extract UTC date and time
-            utc_date = None
-            utc_time = None
-            opening_name = None
-            
-            for line in pgn.split('\n'):
-                if line.startswith('[UTCDate'):
-                    utc_date = line.split('"')[1]
-                elif line.startswith('[UTCTime'):
-                    utc_time = line.split('"')[1]
-                elif line.startswith('[ECOUrl'):
-                    eco_url = line.split('"')[1]
-                    if 'openings/' in eco_url:
-                        opening_name = eco_url.split('openings/')[1].replace('-', ' ')
-            
-            if utc_date and utc_time:
-                info['datetime'] = f"{utc_date} {utc_time}"
-            if opening_name:
-                info['opening_name'] = opening_name
-                
-        except Exception as e:
-            logger.error(f"Error extracting PGN info: {str(e)}")
-            
-        return info
+    def _extract_pgn_info(pgn_text):
+        """Extract date, time, and opening info from PGN headers."""
+        # Initialize default values
+        date = None
+        time = None
+        opening = "Unknown Opening"
+        
+        # Extract date from [UTCDate "YYYY.MM.DD"] or [Date "YYYY.MM.DD"]
+        date_match = re.search(r'\[(UTCDate|Date)\s+"(\d{4}\.\d{2}\.\d{2})"\]', pgn_text)
+        if date_match:
+            date_str = date_match.group(2)  # Use the actual date string
+            try:
+                # Parse the date string directly without validation
+                year, month, day = map(int, date_str.split('.'))
+                date = datetime(year, month, day)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid date format: {date_str}")
+                date = None
+        
+        # Extract time from [UTCTime "HH:mm:ss"]
+        time_match = re.search(r'\[UTCTime\s+"(\d{2}:\d{2}:\d{2})"\]', pgn_text)
+        if time_match:
+            time_str = time_match.group(1)
+            try:
+                time = datetime.strptime(time_str, '%H:%M:%S').time()
+            except ValueError:
+                logger.warning(f"Invalid time format: {time_str}")
+                time = None
+        
+        # First try to extract opening from ECOUrl
+        eco_url_match = re.search(r'\[ECOUrl\s+"[^"]+/openings/([^"]+)"\]', pgn_text)
+        if eco_url_match:
+            opening = eco_url_match.group(1).replace('-', ' ')  # Replace dashes with spaces
+        else:
+            # Fallback to Opening tag
+            opening_match = re.search(r'\[Opening\s+"([^"]+)"\]', pgn_text)
+            if opening_match:
+                opening = opening_match.group(1)
+            else:
+                # Last resort: use ECO code
+                eco_match = re.search(r'\[ECO\s+"([^"]+)"\]', pgn_text)
+                if eco_match:
+                    opening = eco_match.group(1)
+        
+        # Combine date and time if both are available
+        if date and time:
+            played_at = make_aware(datetime.combine(date, time))
+        elif date:
+            played_at = make_aware(datetime.combine(date, datetime.min.time()))
+        else:
+            played_at = make_aware(datetime.now())  # Fallback to current time
+            logger.warning("No date found in PGN, using current time")
+        
+        return {
+            'played_at': played_at,
+            'opening_name': opening
+        }
 
     @staticmethod
     def fetch_games(username: str, game_type: str = "all", limit: int = 10) -> List[Dict[str, Any]]:
@@ -124,16 +154,8 @@ class ChessComService:
                                     username
                                 ),
                                 "pgn": game.get("pgn", ""),
-                                "played_at": (
-                                    datetime.strptime(pgn_info['datetime'], "%Y.%m.%d %H:%M:%S")
-                                    if 'datetime' in pgn_info
-                                    else make_aware(datetime.fromtimestamp(game.get("end_time", 0)), timezone=get_current_timezone())
-                                ),
-                                "opening_name": (
-                                    pgn_info.get('opening_name')
-                                    or game.get("opening", {}).get("name")
-                                    or game.get("opening", {}).get("eco", {}).get("name", "Unknown Opening")
-                                )
+                                "date_played": pgn_info['played_at'],
+                                "opening_name": pgn_info['opening_name']
                             }
                             
                             logger.info(f"Formatted game: {formatted_game}")

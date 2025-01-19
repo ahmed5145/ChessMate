@@ -5,6 +5,7 @@ from datetime import datetime
 import uuid
 import chess
 from .game_analyzer import GameAnalyzer
+from django.utils import timezone
 
 class FeedbackTestCase(TestCase):
     def setUp(self):
@@ -20,13 +21,16 @@ class FeedbackTestCase(TestCase):
         Profile.objects.create(user=self.user, credits=10)
         # Create a game using the user
         self.game = Game.objects.create(
-            player=self.user,
-            game_url=f"https://example.com/game/{uuid.uuid4().hex}",
-            played_at="2025-01-01T12:00:00Z",
-            opponent="test_opponent",
-            result="win",
-            pgn="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7",
-            is_white=True
+            user=self.user,
+            platform='chess.com',
+            game_id=uuid.uuid4().hex,
+            white='testuser',
+            black='test_opponent',
+            result='win',
+            pgn='1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7',
+            date_played=timezone.now(),
+            opening_name='Ruy Lopez',
+            opponent='test_opponent'
         )
 
     def test_feedback_generation(self):

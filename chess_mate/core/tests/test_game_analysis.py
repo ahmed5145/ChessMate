@@ -35,17 +35,18 @@ def user():
 @pytest.fixture
 @pytest.mark.django_db(transaction=True)
 def game(user):
-    with transaction.atomic():
-        return Game.objects.create(
-            player=user,  # Using User instance directly
-            game_url=f'https://chess.com/game/{uuid.uuid4().hex}',
-            played_at=datetime.now(),
-            opponent='opponent1',
-            result='win',
-            pgn='1. e4 e5 2. Nf3 Nc6 3. Bb5',
-            is_white=True,
-            opening_name='Ruy Lopez'
-        )
+    return Game.objects.create(
+        user=user,
+        platform='chess.com',
+        game_id=uuid.uuid4().hex,
+        white='testuser',
+        black='opponent1',
+        result='1-0',
+        pgn='1. e4 e5 2. Nf3 Nc6 3. Bb5',
+        date_played=datetime.now(),
+        opening_name='Ruy Lopez',
+        opponent='opponent1'
+    )
 
 @pytest.fixture
 def mock_stockfish_engine():
@@ -295,14 +296,18 @@ class TestGameAnalysis:
             game_analyzer.analyze_games([])
 
         # Test with invalid PGN
-        invalid_game = Game(
-            player=User.objects.create_user(username=f'testuser_{uuid.uuid4().hex[:8]}'),
-            game_url=f'https://chess.com/game/{uuid.uuid4().hex}',
-            played_at=datetime.now(),
-            opponent='opponent1',
-            result='win',
+        test_user = User.objects.create_user(username=f'testuser_{uuid.uuid4().hex[:8]}')
+        invalid_game = Game.objects.create(
+            user=test_user,
+            platform='chess.com',
+            game_id=uuid.uuid4().hex,
+            white='testuser',
+            black='opponent1',
+            result='unknown',
             pgn='invalid pgn',
-            is_white=True
+            date_played=datetime.now(),
+            opening_name='Unknown Opening',
+            opponent='opponent1'
         )
         with pytest.raises(ValueError, match="Invalid PGN data: No moves found"):
             game_analyzer.analyze_single_game(invalid_game) 
