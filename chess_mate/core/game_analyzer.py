@@ -246,9 +246,18 @@ class GameAnalyzer:
         # Calculate averages and generate suggestions
         if total_moves > 0:
             feedback["time_management"]["avg_time_per_move"] = total_time / total_moves
-            feedback["opening"]["accuracy"] = (feedback["opening"]["accuracy"] / min(10, total_moves)) * 100
+            
+            # Calculate opening accuracy based on move quality
+            good_moves = total_moves - (feedback["blunders"] * 3 + feedback["mistakes"] * 2 + feedback["inaccuracies"])
+            feedback["opening"]["accuracy"] = (good_moves / total_moves) * 100 if total_moves > 0 else 0
+            
+            # Calculate endgame accuracy similarly
             if feedback["endgame"]["accuracy"] > 0:
-                feedback["endgame"]["accuracy"] = (feedback["endgame"]["accuracy"] / (total_moves * 0.3)) * 100
+                endgame_moves = total_moves * 0.3
+                endgame_good_moves = endgame_moves - (
+                    feedback["blunders"] + feedback["mistakes"] + feedback["inaccuracies"]
+                )
+                feedback["endgame"]["accuracy"] = (endgame_good_moves / endgame_moves) * 100 if endgame_moves > 0 else 0
             
             # Normalize positional play scores
             feedback["positional_play"]["piece_activity"] = (feedback["positional_play"]["piece_activity"] / total_moves) * 100

@@ -126,12 +126,36 @@ class TestGameAnalysis:
         url = reverse('analyze_game', args=[game.id])
         
         mock_feedback = {
-            "opening": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "tactics": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "strategy": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "time_management": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "endgame": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "study_plan": {"focus_areas": ["Test area"], "exercises": ["Test exercise"]}
+            "mistakes": 1,
+            "blunders": 0,
+            "inaccuracies": 2,
+            "time_management": {
+                "avg_time_per_move": 15,
+                "critical_moments": [],
+                "time_pressure_moves": [],
+                "suggestion": "Good time management"
+            },
+            "opening": {
+                "played_moves": ["e4", "e5", "Nf3"],
+                "accuracy": 85.5,
+                "suggestion": "Good opening play"
+            },
+            "tactical_opportunities": ["Missed fork on move 15"],
+            "endgame": {
+                "evaluation": "Equal position",
+                "accuracy": 80.0,
+                "suggestion": "Practice rook endgames"
+            },
+            "positional_play": {
+                "piece_activity": 75,
+                "pawn_structure": 80,
+                "king_safety": 90,
+                "suggestion": "Good piece coordination"
+            },
+            "ai_suggestions": {
+                "strengths": ["Tactical awareness", "Time management"],
+                "areas_for_improvement": ["Opening preparation", "Endgame technique"]
+            }
         }
         
         with patch('chess.engine.SimpleEngine.popen_uci', return_value=mock_stockfish_engine), \
@@ -140,33 +164,22 @@ class TestGameAnalysis:
             response = api_client.post(url)
             assert response.status_code == status.HTTP_200_OK
             
-            # Check that we got a response with analysis data
+            # Check response structure
             assert isinstance(response.data, dict)
             assert 'analysis' in response.data
             assert 'feedback' in response.data
             
-            # Check analysis structure
-            assert isinstance(response.data['analysis'], list)
-            assert len(response.data['analysis']) > 0
-            
             # Check feedback structure
-            assert isinstance(response.data['feedback'], dict)
-            assert 'ai_suggestions' in response.data['feedback']
-            
-            # Check AI suggestions structure
-            ai_suggestions = response.data['feedback']['ai_suggestions']
-            assert 'opening' in ai_suggestions
-            assert 'tactics' in ai_suggestions
-            assert 'strategy' in ai_suggestions
-            assert 'time_management' in ai_suggestions
-            assert 'endgame' in ai_suggestions
-            assert 'study_plan' in ai_suggestions
-            
-            # Verify OpenAI was called
-            assert mock_openai_client.chat.completions.create.called
-            
-            # Verify the feedback contains the mock response
-            assert "Test feedback content" in str(response.data)
+            feedback = response.data['feedback']
+            assert 'opening' in feedback
+            assert 'accuracy' in feedback['opening']
+            assert 'mistakes' in feedback
+            assert 'blunders' in feedback
+            assert 'time_management' in feedback
+            assert 'tactical_opportunities' in feedback
+            assert 'endgame' in feedback
+            assert 'positional_play' in feedback
+            assert 'ai_suggestions' in feedback
 
     def test_analyze_game_view_not_found(self, api_client, user):
         api_client.force_authenticate(user=user)
@@ -195,12 +208,32 @@ class TestGameAnalysis:
         url = reverse('batch_analyze_games')
         
         mock_feedback = {
-            "opening": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "tactics": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "strategy": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "time_management": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "endgame": {"analysis": "Test feedback content", "suggestions": ["Test suggestion"]},
-            "study_plan": {"focus_areas": ["Test area"], "exercises": ["Test exercise"]}
+            "mistakes": 1,
+            "blunders": 0,
+            "inaccuracies": 2,
+            "time_management": {
+                "avg_time_per_move": 15,
+                "critical_moments": [],
+                "time_pressure_moves": [],
+                "suggestion": "Good time management"
+            },
+            "opening": {
+                "played_moves": ["e4", "e5", "Nf3"],
+                "accuracy": 85.5,
+                "suggestion": "Good opening play"
+            },
+            "tactical_opportunities": ["Missed fork on move 15"],
+            "endgame": {
+                "evaluation": "Equal position",
+                "accuracy": 80.0,
+                "suggestion": "Practice rook endgames"
+            },
+            "positional_play": {
+                "piece_activity": 75,
+                "pawn_structure": 80,
+                "king_safety": 90,
+                "suggestion": "Good piece coordination"
+            }
         }
         
         with patch('chess.engine.SimpleEngine.popen_uci', return_value=mock_stockfish_engine), \

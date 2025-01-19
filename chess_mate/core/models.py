@@ -10,13 +10,14 @@ Models:
 
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.validators import MinValueValidator
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 from typing import Any
 
 class Player(models.Model):
     """Model representing a player."""
-    objects = models.Manager()
     username = models.CharField(max_length=100, unique=True)
     date_joined = models.DateTimeField(auto_now_add=True)
 
@@ -25,102 +26,111 @@ class Player(models.Model):
 
 class Profile(models.Model):
     """Model representing a user profile."""
-    objects = models.Manager()
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    credits = models.IntegerField(default=5)  # New users get 5 free credits
-    rating = models.IntegerField(default=1200)
+    rating = models.IntegerField(default=1500)
+    credits = models.IntegerField(default=10, validators=[MinValueValidator(0)])
     total_games = models.IntegerField(default=0)
     win_rate = models.FloatField(default=0.0)
     recent_performance = models.CharField(max_length=20, default='stable')
     preferred_openings = models.JSONField(default=list)
+    
+    # Email verification fields
+    email_verified = models.BooleanField(default=False)
+    email_verification_token = models.CharField(max_length=100, null=True, blank=True)
+    email_verification_sent_at = models.DateTimeField(null=True, blank=True)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
-        return f"{self.user.get_username()}'s profile"
+        return f"{self.user.username}'s profile"
 
     class Meta:
-        db_table = 'core_profile'
+        db_table = 'user_profile'
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender: Any, instance: User, created: bool, **kwargs: Any) -> None:
-    """Create a Profile instance for all newly created User instances."""
+    """Create a Profile instance when a new User is created."""
     if created:
         Profile.objects.create(user=instance)
 
+@receiver(post_save, sender=User)
+def save_user_profile(sender: Any, instance: User, **kwargs: Any) -> None:
+    """Save the Profile instance when the User is saved."""
+    try:
+        instance.profile.save()
+    except Profile.DoesNotExist:
+        Profile.objects.create(user=instance)
+
+def get_default_user():
+    """Get or create a default user for legacy data."""
+    return User.objects.get_or_create(username='legacy_user')[0].id
+
 class Game(models.Model):
     """Model representing a game."""
-    objects = models.Manager()
-    player = models.ForeignKey(User, on_delete=models.CASCADE)
-    game_url = models.URLField(unique=True)
-    played_at = models.DateTimeField()
-    opponent = models.CharField(max_length=100)
-    result = models.CharField(max_length=10)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='games', default=get_default_user)
+    platform = models.CharField(max_length=20)  # 'chess.com' or 'lichess'
+    game_id = models.CharField(max_length=100)
     pgn = models.TextField()
-    is_white = models.BooleanField()
-    opening_name = models.CharField(max_length=100, blank=True, null=True)
+    result = models.CharField(max_length=10)  # win, loss, draw
+    white = models.CharField(max_length=100)
+    black = models.CharField(max_length=100)
+    opponent = models.CharField(max_length=100, default="Unknown")
+    opening_name = models.CharField(max_length=200, default="Unknown Opening")
+    date_played = models.DateTimeField()
     analysis = models.JSONField(null=True, blank=True)
+    feedback = models.JSONField(null=True, blank=True)  # Store analysis feedback
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
-        return f"{self.player.get_username()} vs {self.opponent} ({self.played_at})"
+        return f"{self.user.username} vs {self.opponent} ({self.result})"
 
     class Meta:
-        db_table = 'core_game'
-        ordering = ['-played_at']
+        db_table = 'games'
+        unique_together = ('user', 'platform', 'game_id')
+        ordering = ['-date_played']
 
 class GameAnalysis(models.Model):
     """Model representing a game analysis."""
-    objects = models.Manager()
-    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='analyses')
-    move = models.CharField(max_length=20)
-    score = models.IntegerField()
-    depth = models.IntegerField()
-    time_spent = models.FloatField(null=True, blank=True)
-    is_capture = models.BooleanField(default=False)
-    move_number = models.IntegerField(default=0)
-    evaluation_trend = models.CharField(max_length=10, null=True, blank=True)
+    game = models.OneToOneField(Game, on_delete=models.CASCADE)
+    analysis_data = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
-        return f"Analysis for Game {self.game.pk}"
+        return f"Analysis for {self.game}"
 
     class Meta:
-        indexes = [
-            models.Index(fields=['game']),
-            models.Index(fields=['move']),
-        ]
+        db_table = 'game_analysis'
 
 class Transaction(models.Model):
     """Model representing a credit transaction."""
-    objects = models.Manager()
-    
     TRANSACTION_TYPES = [
-        ('purchase', 'Credit Purchase'),
-        ('usage', 'Credit Usage'),
+        ('purchase', 'Purchase'),
+        ('usage', 'Usage'),
         ('refund', 'Refund'),
-        ('bonus', 'Bonus Credits')
     ]
-
+    
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),
-        ('refunded', 'Refunded')
+        ('refunded', 'Refunded'),
     ]
-
+    
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     credits = models.IntegerField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    stripe_payment_id = models.CharField(max_length=100, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    stripe_payment_id = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
-        return f"{self.user.get_username()} - {self.transaction_type} - {self.credits} credits"
+        return f"{self.transaction_type} - {self.credits} credits for {self.user.username}"
 
     class Meta:
-        db_table = 'core_transaction'
-        ordering = ['-created_at']
+        db_table = 'transactions'

@@ -115,13 +115,22 @@ export const loginUser = async (credentials) => {
     setAuthHeader(null);
 
     const response = await api.post("/login/", credentials);
-    const { access, refresh } = response.data.tokens;
-    setAuthHeader(access); // Set the auth header for future requests
-    localStorage.setItem("access_token", access); // Store the access token
-    localStorage.setItem("refresh_token", refresh); // Store the refresh token
+    const { tokens } = response.data;
+    
+    if (!tokens || !tokens.access || !tokens.refresh) {
+      throw new Error("Invalid response from server");
+    }
+    
+    setAuthHeader(tokens.access); // Set the auth header for future requests
+    localStorage.setItem("access_token", tokens.access); // Store the access token
+    localStorage.setItem("refresh_token", tokens.refresh); // Store the refresh token
+    localStorage.setItem("tokens", JSON.stringify(tokens)); // Store the full tokens object
     return response.data;
   } catch (error) {
-    throw error.response ? error.response.data : error.message;
+    if (error.response) {
+      throw error.response.data;
+    }
+    throw { error: error.message || "Login failed" };
   }
 };
 

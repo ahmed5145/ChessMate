@@ -2,11 +2,11 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { loginUser } from "../api";
 import { KeyRound, Mail } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -15,11 +15,15 @@ const Login = () => {
     setLoading(true);
     try {
       const response = await loginUser({ email, password });
-      localStorage.setItem("tokens", JSON.stringify(response.tokens));
-      setMessage("Login successful!");
-      navigate("/dashboard");
+      if (response.tokens) {
+        toast.success(response.message || "Login successful!");
+        navigate("/dashboard");
+      } else {
+        throw new Error("Invalid response from server");
+      }
     } catch (error) {
-      setMessage(error.response?.data?.error || "An error occurred");
+      console.error("Login error:", error);
+      toast.error(error.error || "Failed to login. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -84,18 +88,6 @@ const Login = () => {
                 />
               </div>
             </div>
-
-            {message && (
-              <div className={`rounded-md p-4 ${
-                message.includes("successful") ? "bg-green-50" : "bg-red-50"
-              }`}>
-                <p className={`text-sm ${
-                  message.includes("successful") ? "text-green-800" : "text-red-800"
-                }`}>
-                  {message}
-                </p>
-              </div>
-            )}
 
             <div>
               <button

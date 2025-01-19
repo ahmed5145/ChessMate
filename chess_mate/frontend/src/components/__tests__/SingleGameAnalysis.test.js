@@ -67,7 +67,42 @@ describe('SingleGameAnalysis', () => {
   });
 
   it('renders analysis data when loaded', async () => {
-    analyzeSpecificGame.mockResolvedValue(mockAnalysisData);
+    analyzeSpecificGame.mockResolvedValue({
+      analysis: mockAnalysisData.analysis,
+      feedback: {
+        mistakes: 1,
+        blunders: 0,
+        inaccuracies: 2,
+        time_management: {
+          avg_time_per_move: 15,
+          critical_moments: [],
+          time_pressure_moves: [],
+          suggestion: "Good time management"
+        },
+        opening: {
+          played_moves: ["e4", "e5", "Nf3"],
+          accuracy: 85.5,
+          suggestion: "Good opening play"
+        },
+        tactical_opportunities: ["Missed fork on move 15"],
+        endgame: {
+          evaluation: "Equal position",
+          accuracy: 80.0,
+          suggestion: "Practice rook endgames"
+        },
+        positional_play: {
+          piece_activity: 75,
+          pawn_structure: 80,
+          king_safety: 90,
+          suggestion: "Good piece coordination"
+        },
+        ai_suggestions: {
+          strengths: ["Tactical awareness", "Time management"],
+          areas_for_improvement: ["Opening preparation", "Endgame technique"]
+        }
+      },
+      game_info: mockAnalysisData.game_info
+    });
 
     render(
       <MemoryRouter initialEntries={['/analysis/1']}>
@@ -81,9 +116,12 @@ describe('SingleGameAnalysis', () => {
       expect(screen.getByText('Game Analysis')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('85.0%')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument(); // mistakes
-    expect(screen.getByText('0')).toBeInTheDocument(); // blunders
+    expect(screen.getByText('85.5%')).toBeInTheDocument();
+    expect(screen.getByText(/1/)).toBeInTheDocument(); // mistakes
+    expect(screen.getByText(/0/)).toBeInTheDocument(); // blunders
+    expect(screen.getByText(/2/)).toBeInTheDocument(); // inaccuracies
+    expect(screen.getByText('Good time management')).toBeInTheDocument();
+    expect(screen.getByText('Good opening play')).toBeInTheDocument();
   });
 
   it('renders error state when API call fails', async () => {

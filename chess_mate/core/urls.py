@@ -16,11 +16,10 @@ urlpatterns = [
 
     # Game management endpoints
     path('api/fetch-games/', views.fetch_games, name='fetch_games'),
-    path("api/dashboard/", views.user_games_view, name="dashboard"),  # User-specific games
-    path("api/games/", views.get_saved_games, name="get_saved_games"), # All games endpoint
+    path("api/dashboard/", views.dashboard_view, name="dashboard"),
+    path("api/games/", views.get_saved_games, name="get_saved_games"),
 
     # Analysis endpoints
-    path("api/game/<int:game_id>/analyze/", views.analyze_game_view, name="analyze_game"),
     path("api/game/<int:game_id>/analysis/", views.analyze_game_view, name="analyze_game"),
     path("api/games/batch-analyze/", views.analyze_batch_games_view, name="batch_analyze_games"),
 
@@ -33,5 +32,8 @@ urlpatterns = [
     path('api/credits/deduct/', views.deduct_credits, name='deduct_credits'),
     path('api/purchase-credits/', views.purchase_credits, name='purchase_credits'),
     path('api/confirm-purchase/', views.confirm_purchase, name='confirm_purchase'),
+
+    # Email verification endpoint
+    path('verify-email/<str:uidb64>/<str:token>/', views.verify_email, name='verify_email'),
 
 ]

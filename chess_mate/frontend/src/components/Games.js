@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, Filter, Search } from 'lucide-react';
+import { Filter, Search } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const API_BASE_URL = 'http://localhost:8000/api';
@@ -35,8 +35,13 @@ const Games = () => {
       }
 
       const data = await response.json();
-      console.log('Fetched games:', data);
-      setGames(data);
+      // Clean up opponent names by removing "vs " prefix if present
+      const cleanedGames = data.map(game => ({
+        ...game,
+        opponent: game.opponent.replace(/^vs\s+/, '')
+      }));
+      console.log('Fetched games:', cleanedGames);
+      setGames(cleanedGames);
     } catch (error) {
       console.error('Error fetching games:', error);
       toast.error('Failed to load games. Please try again.');
@@ -205,8 +210,63 @@ const Games = () => {
                         </td>
                         <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                           <Link
-                            to={`/game/${game.id}/analysis`}
+                            to={`/analysis/${game.id}`}
                             className="text-indigo-600 hover:text-indigo-900"
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              const toastId = `analysis-${game.id}`;
+                              
+                              try {
+                                const accessToken = localStorage.getItem('tokens') ? JSON.parse(localStorage.getItem('tokens')).access : null;
+                                if (!accessToken) {
+                                  toast.error('Please log in to analyze games');
+                                  return;
+                                }
+
+                                // Show analysis in progress
+                                toast.loading('Analyzing game...', { id: toastId });
+
+                                const response = await fetch(`${API_BASE_URL}/game/${game.id}/analysis/`, {
+                                  method: 'POST',
+                                  headers: {
+                                    'Authorization': `Bearer ${accessToken}`,
+                                    'Content-Type': 'application/json'
+                                  },
+                                  body: JSON.stringify({
+                                    depth: 20,
+                                    use_ai: true
+                                  })
+                                });
+
+                                const data = await response.json();
+
+                                if (!response.ok) {
+                                  toast.error(data.error || 'Failed to analyze game', { id: toastId });
+                                  throw new Error(data.error || 'Failed to analyze game');
+                                }
+
+                                // Update the game in the local state
+                                setGames(prevGames => 
+                                  prevGames.map(g => 
+                                    g.id === game.id 
+                                      ? { ...g, analysis: data.analysis }
+                                      : g
+                                  )
+                                );
+
+                                // Show success message
+                                toast.success(data.message || 'Analysis completed!', { id: toastId });
+
+                                // Refresh the games list
+                                fetchGames();
+
+                                // Navigate to analysis view
+                                window.location.href = `/analysis/${game.id}`;
+                              } catch (error) {
+                                console.error('Error analyzing game:', error);
+                                toast.error(error.message || 'Failed to analyze game', { id: toastId });
+                              }
+                            }}
                           >
                             View Analysis
                             <span className="sr-only">, game {game.id}</span>

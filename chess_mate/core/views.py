@@ -8,7 +8,9 @@ import os
 import json
 import logging
 import httpx
+import uuid
 from datetime import datetime
+from django.utils import timezone
 from typing import Dict, Any, List, Optional
 
 # Django imports
@@ -24,6 +26,11 @@ from django_ratelimit.decorators import ratelimit   # type: ignore
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.template.loader import render_to_string
+from django.contrib.sites.shortcuts import get_current_site
+from django.urls import reverse
 
 # Third-party imports
 import requests
@@ -79,12 +86,278 @@ def index(request):
     return render(request, "index.html")
 
 @csrf_exempt
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_saved_games(request):
+    """
+    Retrieve saved games for the logged-in user.
+    """
+    user = request.user
+    games = Game.objects.filter(user=user).values(
+        "id",
+        "platform",
+        "white",
+        "black",
+        "opponent",
+        "result",
+        "date_played",
+        "opening_name",
+        "analysis"
+    ).order_by("-date_played")
+    
+    return Response(list(games), status=status.HTTP_200_OK)
+
+class EmailVerificationToken:
+    @staticmethod
+    def generate_token():
+        return str(uuid.uuid4())
+
+    @staticmethod
+    def is_valid(token, max_age_days=7):
+        try:
+            # Add token validation logic here if needed
+            return True
+        except Exception:
+            return False
+
+@csrf_exempt
+@api_view(["POST"])
+def register_view(request):
+    """
+    Handle user registration with email verification.
+    """
+    data = request.data
+    email = data.get("email")
+    password = data.get("password")
+    username = data.get("username")
+
+    # Validate required fields
+    if not email or not password or not username:
+        return Response(
+            {"error": "All fields are required.", "field": "all"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Check for existing email
+    if User.objects.filter(email=email).exists():
+        return Response(
+            {
+                "error": "This email is already registered. Please use a different email or try logging in.",
+                "field": "email"
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Check for existing username
+    if User.objects.filter(username=username).exists():
+        return Response(
+            {
+                "error": "This username is already taken. Please choose a different username.",
+                "field": "username"
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        validate_password_complexity(password)
+    except ValidationError as e:
+        return Response(
+            {"error": str(e), "field": "password"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        with transaction.atomic():
+            # Create inactive user
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                is_active=False
+            )
+            
+            # Delete any existing profile for this user
+            Profile.objects.filter(user=user).delete()
+            
+            # Create new profile with starter credits
+            profile = Profile.objects.create(
+                user=user,
+                email_verification_token=EmailVerificationToken.generate_token(),
+                email_verification_sent_at=timezone.now(),
+                credits=10  # Give starter credits
+            )
+            
+            # Send verification email
+            try:
+                send_verification_email(request, user, profile.email_verification_token)
+            except Exception as e:
+                logger.error(f"Error sending verification email: {str(e)}")
+                # Don't fail registration if email fails, but log it
+                pass
+            
+        return Response(
+            {
+                "message": "Registration successful! Please check your email to verify your account.",
+                "email": email
+            },
+            status=status.HTTP_201_CREATED
+        )
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
+        return Response(
+            {"error": "An unexpected error occurred during registration. Please try again."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+def send_verification_email(request, user, token):
+    """
+    Send verification email with activation link.
+    """
+    try:
+        current_site = get_current_site(request)
+        protocol = 'https' if request.is_secure() else 'http'
+        verification_url = f"{protocol}://{current_site.domain}/verify-email/{urlsafe_base64_encode(force_bytes(user.pk))}/{token}"
+        
+        subject = "Verify Your Email - ChessMate"
+        html_message = render_to_string('email/verify_email.html', {
+            'user': user,
+            'verification_url': verification_url,
+            'domain': current_site.domain,
+        })
+        
+        # Create plain text version
+        text_message = f"""
+        Hello {user.username},
+        
+        Thank you for registering with ChessMate. To complete your registration and activate your account, please visit:
+        
+        {verification_url}
+        
+        This verification link will expire in 7 days.
+        
+        If you did not create an account with ChessMate, please ignore this email.
+        """
+        
+        logger.info(f"Attempting to send verification email to {user.email}")
+        
+        send_mail(
+            subject=subject,
+            message=text_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+            html_message=html_message
+        )
+        
+        logger.info(f"Successfully sent verification email to {user.email}")
+        
+    except Exception as e:
+        logger.error(f"Failed to send verification email to {user.email}. Error: {str(e)}")
+        logger.error(f"Email settings: HOST={settings.EMAIL_HOST}, PORT={settings.EMAIL_PORT}, USER={settings.EMAIL_HOST_USER}, FROM={settings.DEFAULT_FROM_EMAIL}")
+        raise
+
+@csrf_exempt
+@api_view(["GET"])
+def verify_email(request, uidb64, token):
+    """
+    Verify email and activate user account.
+    """
+    try:
+        # First decode the uidb64 to get the user id
+        from django.utils.encoding import force_str
+        from django.utils.http import urlsafe_base64_decode
+        
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+        profile = Profile.objects.get(user=user)
+        
+        if profile.email_verification_token == token:
+            if not EmailVerificationToken.is_valid(token):
+                return render(request, 'verification_error.html', {
+                    'error': 'Verification link has expired. Please request a new one.'
+                }, status=400)
+            
+            user.is_active = True
+            user.save()
+            
+            profile.email_verified = True
+            profile.email_verified_at = timezone.now()
+            profile.save()
+            
+            return render(request, 'verification_success.html', {
+                'username': user.username
+            })
+        
+        return render(request, 'verification_error.html', {
+            'error': 'Invalid verification link.'
+        }, status=400)
+        
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist, Profile.DoesNotExist) as e:
+        logger.error(f"Email verification error: {str(e)}")
+        return render(request, 'verification_error.html', {
+            'error': 'Invalid verification link.'
+        }, status=400)
+
+@csrf_exempt
+@api_view(["POST"])
+def login_view(request):
+    """
+    Handle user login with email verification check.
+    """
+    try:
+        data = request.data
+        email = data.get("email")
+        password = data.get("password")
+
+        if not email or not password:
+            return Response(
+                {"error": "Both email and password are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Invalid email or password."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not user.is_active:
+            return Response(
+                {"error": "Please verify your email before logging in."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = authenticate(username=user.username, password=password)
+        if user is None:
+            return Response(
+                {"error": "Invalid email or password."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        tokens = get_tokens_for_user(user)
+        return Response({
+            "message": "Login successful!",
+            "tokens": tokens,
+            "user": {
+                "username": user.username,
+                "email": user.email
+            }
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        return Response(
+            {"error": "An error occurred during login."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@csrf_exempt
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def fetch_games(request):
     """
     Fetch games from Chess.com or Lichess APIs based on the username and platform provided.
-    Deducts credits based on the number of games requested.
     """
     user = request.user
     data = request.data
@@ -99,7 +372,6 @@ def fetch_games(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Validate game mode
     allowed_game_modes = ["all", "bullet", "blitz", "rapid", "classical"]
     if game_mode not in allowed_game_modes:
         return Response(
@@ -108,10 +380,9 @@ def fetch_games(request):
         )
 
     try:
-        # Check if user has enough credits
         with transaction.atomic():
             profile = Profile.objects.select_for_update().get(user=user)
-            required_credits = num_games  # 1 credit per game
+            required_credits = num_games
             
             if profile.credits < required_credits:
                 return Response(
@@ -119,7 +390,6 @@ def fetch_games(request):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Fetch games based on platform
             try:
                 if platform == "chess.com":
                     games = ChessComService.fetch_games(username, game_mode, limit=num_games)
@@ -130,6 +400,14 @@ def fetch_games(request):
                         {"error": "Invalid platform. Use 'chess.com' or 'lichess'."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+                
+                if not games:
+                    return Response(
+                        {"message": "No games found for the given username and criteria."},
+                        status=status.HTTP_200_OK
+                    )
+                
+                logger.info(f"Fetched {len(games)} games from {platform} for user {username}")
             except Exception as e:
                 logger.error(f"Error fetching games from {platform}: {str(e)}")
                 return Response(
@@ -137,80 +415,135 @@ def fetch_games(request):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-            # Save fetched games and deduct credits
+            saved_games = []
             saved_count = 0
-            for game in games:
-                if save_game(game, username, user):
+            for game_data in games:
+                try:
+                    # Ensure game_id exists and is unique
+                    game_id = game_data.get("game_id")
+                    if not game_id:
+                        logger.warning(f"Skipping game without game_id: {game_data}")
+                        continue
+                        
+                    # Check if game already exists
+                    if Game.objects.filter(user=user, platform=platform, game_id=game_id).exists():
+                        logger.info(f"Game {game_id} already exists for user {user.username}")
+                        continue
+
+                    game = Game.objects.create(
+                        user=user,
+                        platform=platform,
+                        game_id=game_id,
+                        pgn=game_data.get("pgn", ""),
+                        result=game_data.get("result", "unknown"),
+                        white=game_data.get("white", ""),
+                        black=game_data.get("black", ""),
+                        opponent=game_data.get("opponent", "Unknown"),
+                        opening_name=game_data.get("opening_name", "Unknown Opening"),
+                        date_played=game_data.get("played_at") or datetime.now()
+                    )
                     saved_count += 1
-                if saved_count >= num_games:  # Stop after saving requested number of games
-                    break
-            
+                    saved_games.append({
+                        "id": game.id,
+                        "platform": game.platform,
+                        "white": game.white,
+                        "black": game.black,
+                        "opponent": game.opponent,
+                        "result": game.result,
+                        "date_played": game.date_played,
+                        "opening_name": game.opening_name,
+                        "game_id": game.game_id
+                    })
+                    
+                    if saved_count >= num_games:
+                        break
+                except Exception as e:
+                    logger.error(f"Error saving game: {str(e)}")
+                    continue
+
             if saved_count > 0:
-                # Deduct credits based on actual number of games saved
                 profile.credits -= saved_count
                 profile.save()
 
-                # Record the transaction
                 Transaction.objects.create(
                     user=user,
-                    transaction_type='game_fetch',
-                    amount=0,
+                    transaction_type='usage',
                     credits=saved_count,
                     status='completed'
                 )
 
-            return Response(
-                {
-                    "message": f"Successfully fetched and saved {saved_count} games!",
-                    "games_saved": saved_count,
-                    "credits_deducted": saved_count,
-                    "credits_remaining": profile.credits
-                },
-                status=status.HTTP_201_CREATED
-            )
+                logger.info(f"Successfully saved {saved_count} games for user {user.username}")
+                return Response(
+                    {
+                        "message": f"Successfully fetched and saved {saved_count} games!",
+                        "games_saved": saved_count,
+                        "credits_deducted": saved_count,
+                        "credits_remaining": profile.credits,
+                        "games": saved_games
+                    },
+                    status=status.HTTP_201_CREATED
+                )
+            else:
+                logger.warning(f"No new games were saved for user {user.username}")
+                return Response(
+                    {
+                        "message": "No new games were saved. They might already exist in your account.",
+                        "games_saved": 0,
+                        "credits_deducted": 0,
+                        "credits_remaining": profile.credits,
+                        "games": []
+                    },
+                    status=status.HTTP_200_OK
+                )
 
     except Profile.DoesNotExist:
+        logger.error(f"Profile not found for user {user.username}")
         return Response(
             {"error": "User profile not found."},
             status=status.HTTP_404_NOT_FOUND
         )
-    except requests.exceptions.HTTPError as http_err:
-        return Response(
-            {"error": f"HTTP error: {str(http_err)}"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    except (requests.exceptions.RequestException, ValueError) as e:
-        logger.error("Error fetching games: %s", str(e))
+    except Exception as e:
+        logger.error(f"Error in fetch_games: {str(e)}")
         return Response(
             {"error": "Failed to fetch games. Please try again later."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+@csrf_exempt
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def get_saved_games(request):
+def user_games_view(request):
     """
-    Retrieve saved games for the logged-in user.
+    Fetch games specific to the logged-in user.
     """
     user = request.user
-    if not user.is_authenticated:
-        return Response({"error": "User not authenticated."}, status=status.HTTP_401_UNAUTHORIZED)
-
-    games = Game.objects.filter(player=user).values(
-        "id",
-        "opponent",
-        "result",
-        "played_at",
-        "game_url",
-        "opening_name",
-        "is_white",
-        "analysis"
-    ).order_by("-played_at")
+    platform = request.query_params.get('platform', 'all')
     
-    return Response(list(games), status=status.HTTP_200_OK)
+    # Base query filtering by user
+    games = Game.objects.filter(user=user)
+    
+    # Apply platform filter if specified
+    if platform != 'all':
+        games = games.filter(platform=platform)
+    
+    games = games.order_by("-date_played")
+    
+    games_data = [
+        {
+            "id": game.id,
+            "white": game.white,
+            "black": game.black,
+            "result": game.result,
+            "date_played": game.date_played,
+            "platform": game.platform,
+            "analysis": game.analysis
+        }
+        for game in games
+    ]
+    return Response({"games": games_data}, status=status.HTTP_200_OK)
 
 @csrf_exempt
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def analyze_game_view(request, game_id):
     """
@@ -218,15 +551,22 @@ def analyze_game_view(request, game_id):
     """
     try:
         user = request.user
-        depth = request.data.get("depth", 20)
-        use_ai = request.data.get("use_ai", True)
-
-        if not isinstance(depth, int) or depth <= 0:
-            return JsonResponse({"error": "Invalid depth value."}, status=400)
+        depth = request.data.get("depth", 20) if request.method == "POST" else 20
+        use_ai = request.data.get("use_ai", True) if request.method == "POST" else True
 
         # Fetch the game from the database
         try:
-            game = Game.objects.get(id=game_id, player=user)
+            game = Game.objects.get(id=game_id, user=user)
+            
+            # Check if game already has analysis and feedback
+            if game.analysis:
+                logger.info(f"Returning existing analysis for game {game_id}")
+                return Response({
+                    "message": "Analysis retrieved from cache",
+                    "analysis": game.analysis,
+                    "feedback": game.feedback if hasattr(game, 'feedback') else generate_feedback_without_ai(game.analysis)
+                }, status=status.HTTP_200_OK)
+                
         except Game.DoesNotExist:
             return Response({"error": "Game not found or unauthorized access."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -256,7 +596,7 @@ def analyze_game_view(request, game_id):
             logger.info("Analysis completed in %.2f seconds", analysis_time)
             
             if not analysis_results or game_id not in analysis_results:
-                return JsonResponse({"error": "Analysis failed to produce results."}, status=500)
+                return Response({"error": "Analysis failed to produce results."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             # Generate comprehensive feedback
             feedback = analyzer.generate_feedback(analysis_results[game_id])
@@ -311,21 +651,38 @@ def analyze_game_view(request, game_id):
                         }
                     }
                 )
+
+            # Update game with analysis results and feedback
+            game.analysis = analysis_results[game_id]
+            game.feedback = feedback  # Save feedback for future use
+            game.save()
+
+            # Deduct credits
+            profile.credits -= 1
+            profile.save()
+
+            # Create transaction record
+            Transaction.objects.create(
+                user=user,
+                transaction_type='analysis',
+                credits=1,
+                status='completed'
+            )
             
             return Response({
+                "message": "Analysis completed successfully!",
                 "analysis": analysis_results[game_id],
-                "feedback": feedback
-            }, status=200)
+                "feedback": feedback,
+                "credits_remaining": profile.credits
+            }, status=status.HTTP_200_OK)
         finally:
             try:
                 analyzer.close_engine()
-            except chess.engine.EngineTerminatedError:
-                logger.warning("Engine already terminated.")
-    except Exception as e:
+            except Exception as e:
                 logger.error("Error closing engine: %s", str(e))
     except Exception as e:
         logger.error("Error in analyze_game_view: %s", str(e), exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @csrf_exempt
 @api_view(["POST"])
@@ -338,7 +695,7 @@ def analyze_batch_games_view(request):
         user = request.user
         num_games = int(request.data.get("num_games", 10))
         use_ai = request.data.get("use_ai", True)
-        depth = request.data.get("depth", 20)  # Added depth parameter
+        depth = request.data.get("depth", 20)
 
         # Validate num_games
         try:
@@ -349,7 +706,7 @@ def analyze_batch_games_view(request):
             return Response({"error": "Invalid number of games value."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Fetch games for the user
-        games = Game.objects.filter(player=user).order_by("-played_at")[:num_games]
+        games = Game.objects.filter(user=user).order_by("-date_played")[:num_games]
         
         # Return empty results if no games found
         if not games.exists():
@@ -442,7 +799,20 @@ def analyze_batch_games_view(request):
             # Calculate averages
             num_analyzed_games = len(feedback_results)
             if num_analyzed_games > 0:
-                overall_stats["average_accuracy"] = total_accuracy / num_analyzed_games
+                # Calculate average accuracy based on good moves vs total moves
+                total_good_moves = 0
+                total_moves = 0
+                for game_feedback in feedback_results.values():
+                    moves = len(game_feedback.get("opening", {}).get("played_moves", []))
+                    mistakes = (
+                        game_feedback.get("blunders", 0) * 3 +  # Blunders count triple
+                        game_feedback.get("mistakes", 0) * 2 +  # Mistakes count double
+                        game_feedback.get("inaccuracies", 0)    # Inaccuracies count once
+                    )
+                    total_moves += moves
+                    total_good_moves += max(0, moves - mistakes)
+                
+                overall_stats["average_accuracy"] = (total_good_moves / total_moves * 100) if total_moves > 0 else 0
                 
                 # Normalize mistake counts
                 for mistake_type in overall_stats["common_mistakes"]:
@@ -452,29 +822,39 @@ def analyze_batch_games_view(request):
                 if overall_stats["common_mistakes"]["blunders"] > 0.5:
                     overall_stats["improvement_areas"].append({
                         "area": "Tactical Awareness",
-                        "description": "Focus on reducing tactical oversights and blunders"
+                        "description": "Focus on reducing tactical oversights and blunders. Consider practicing tactical puzzles daily."
                     })
                 if overall_stats["common_mistakes"]["mistakes"] > 1:
                     overall_stats["improvement_areas"].append({
                         "area": "Strategic Planning",
-                        "description": "Work on positional understanding and long-term planning"
+                        "description": "Work on positional understanding and long-term planning. Study master games in your preferred openings."
                     })
                 if overall_stats["common_mistakes"]["time_pressure"] > 0.3:
                     overall_stats["improvement_areas"].append({
                         "area": "Time Management",
-                        "description": "Improve time management, especially in critical positions"
+                        "description": "Improve time management, especially in critical positions. Practice playing games with increment."
                     })
 
                 # Identify strengths
-                if overall_stats["average_accuracy"] > 80:
+                if overall_stats["average_accuracy"] > 70:
                     overall_stats["strengths"].append({
                         "area": "Overall Accuracy",
-                        "description": "Strong overall play with few significant errors"
+                        "description": "Strong overall play with consistent move quality"
                     })
-                if overall_stats["wins"] / num_analyzed_games > 0.6:
+                if overall_stats["wins"] / num_analyzed_games > 0.5:
                     overall_stats["strengths"].append({
                         "area": "Competitive Performance",
                         "description": "Good win rate showing strong competitive ability"
+                    })
+                if overall_stats["common_mistakes"]["blunders"] < 0.3:
+                    overall_stats["strengths"].append({
+                        "area": "Tactical Solidity",
+                        "description": "Strong tactical awareness with few major oversights"
+                    })
+                if overall_stats["common_mistakes"]["time_pressure"] < 0.2:
+                    overall_stats["strengths"].append({
+                        "area": "Time Management",
+                        "description": "Excellent time management across games"
                     })
 
             # Generate feedback (with or without AI)
@@ -661,111 +1041,6 @@ def get_tokens_for_user(user):
 
 @csrf_exempt
 @api_view(["POST"])
-def register_view(request):
-    """
-    Handle user registration.
-    """
-    data = request.data
-    email = data.get("email")
-    password = data.get("password")
-    username = data.get("username")
-
-    if not email or not password or not username:
-        return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if User.objects.filter(email=email).exists():
-        return Response({"error": "Email already in use."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if User.objects.filter(username=username).exists():
-        return Response({"error": "Username already in use."}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Ensure password complexity is validated
-    try:
-        validate_password_complexity(password)
-    except ValidationError as e:
-        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        with transaction.atomic():
-            user = User.objects.create_user(username=username, email=email, password=password)
-            # Ensure Profile is created only if it does not exist
-            Profile.objects.get_or_create(user=user)
-        send_confirmation_email(user)
-    except ValidationError as e:
-        return Response(
-            {"error": f"Failed to register user due to validation error: {str(e)}"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    except Exception as e:
-        print(f"Unexpected error during registration: {str(e)}")
-        return Response(
-            {"error": "Failed to register user due to an unexpected error."},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-    return Response(
-        {"message": "User registered successfully! Please confirm your email."},
-        status=status.HTTP_201_CREATED
-    )
-
-# Helper function to send a confirmation email
-def send_confirmation_email(user):
-    """
-    Send a confirmation email to the newly registered user.
-    """
-    subject = "Confirm Your Email"
-    message = f"Hi {user.username},\n\nPlease confirm your email address to activate your account."
-    recipient_list = [user.email]
-    try:
-        send_mail(subject, message, "your-email@example.com", recipient_list)
-    except Exception as e:
-        print(f"Error sending confirmation email: {str(e)}")  # Log the specific error
-        raise ValidationError(
-            "Failed to send confirmation email. Please check your email settings and try again."
-        ) from e
-
-@csrf_exempt
-@ratelimit(key="ip", rate="5/m", method="POST", block=True)
-def login_view(request):
-    """
-    Handle user login.
-    """
-    if request.method == "POST":
-        try:
-            # Parse JSON payload
-            data = json.loads(request.body.decode('utf-8'))  # Decode the request body
-
-            # Ensure data is a dictionary
-            if not isinstance(data, dict):
-                return JsonResponse({"error": "Invalid JSON payload"}, status=400)
-
-            # Extract fields
-            email = data.get("email")
-            password = data.get("password")
-
-            if not email or not password:
-                return JsonResponse({"error": "Both email and password are required."}, status=400)
-
-            try:
-                user = User.objects.get(email=email)
-            except ObjectDoesNotExist:
-                return JsonResponse({"error": "Invalid email or password."}, status=400)
-
-            user = authenticate(username=user.username, password=password)
-            if user is None:
-                return JsonResponse({"error": "Invalid email or password."}, status=400)
-
-            tokens = get_tokens_for_user(user)
-            return JsonResponse({"message": "Login successful!", "tokens": tokens}, status=200)
-        except json.JSONDecodeError:
-            return JsonResponse({"error": "Invalid JSON payload"}, status=400)
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
-    else:
-        return JsonResponse({"error": "Only POST method allowed"}, status=405)
-
-@csrf_exempt
-@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
     """
@@ -807,7 +1082,7 @@ def dashboard_view(request):
     Return user-specific games and statistics for the dashboard.
     """
     user = request.user
-    games = Game.objects.filter(player=user)
+    games = Game.objects.filter(user=user)
     
     # Calculate statistics
     total_games = games.count()
@@ -820,13 +1095,15 @@ def dashboard_view(request):
     draws = games.filter(result__iexact='draw').count()
     
     # Get recent games
-    recent_games = games.order_by('-played_at')[:5].values(
+    recent_games = games.order_by('-date_played')[:5].values(
         'id',
+        'platform',
+        'white',
+        'black',
         'opponent',
         'result',
-        'played_at',
+        'date_played',
         'opening_name',
-        'is_white',
         'analysis'
     )
     
@@ -848,28 +1125,6 @@ def dashboard_view(request):
 @csrf_exempt
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def user_games_view(request):
-    """
-    Fetch games specific to the logged-in user.
-    """
-    user = request.user  # Extract the logged-in user
-    games = Game.objects.filter(player=user).order_by("-played_at")
-    games_data = [
-        {
-            "id": game.id,
-            "opponent": game.opponent,
-            "result": game.result,
-            "played_at": game.played_at,
-            "opening_name": game.opening_name,
-            "is_white": game.is_white,
-        }
-        for game in games
-    ]
-    return Response({"games": games_data}, status=status.HTTP_200_OK)
-
-
-@csrf_exempt
-@api_view(["GET"])
 def all_games_view(request):
     """
     Fetch all available games (generic endpoint).

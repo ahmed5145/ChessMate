@@ -11,7 +11,7 @@
 
 ### Register
 ```http
-POST /api/auth/register
+POST /api/register
 ```
 
 Register a new user account.
@@ -28,13 +28,43 @@ Register a new user account.
 **Response:**
 ```json
 {
-  "message": "User registered successfully! Please confirm your email."
+  "message": "Registration successful! Please check your email to verify your account.",
+  "email": "string"
 }
 ```
 
+**Error Responses:**
+```json
+{
+  "error": "This email is already registered. Please use a different email or try logging in.",
+  "field": "email"
+}
+```
+```json
+{
+  "error": "This username is already taken. Please choose a different username.",
+  "field": "username"
+}
+```
+
+### Email Verification
+```http
+GET /verify-email/{uidb64}/{token}/
+```
+
+Verify email address. Returns HTML pages for success/error.
+
+**Success Response:**
+- Renders verification_success.html with login button
+- Redirects to frontend login page
+
+**Error Response:**
+- Renders verification_error.html with error details
+- Provides link to registration page
+
 ### Login
 ```http
-POST /api/auth/login
+POST /api/login
 ```
 
 Login with email and password.
@@ -54,13 +84,29 @@ Login with email and password.
   "tokens": {
     "access": "string",
     "refresh": "string"
+  },
+  "user": {
+    "username": "string",
+    "email": "string"
   }
+}
+```
+
+**Error Responses:**
+```json
+{
+  "error": "Please verify your email before logging in."
+}
+```
+```json
+{
+  "error": "Invalid email or password."
 }
 ```
 
 ### Logout
 ```http
-POST /api/auth/logout
+POST /api/logout
 ```
 
 Logout and blacklist the refresh token.
@@ -109,43 +155,62 @@ Authorization: Bearer <access_token>
   "message": "Successfully fetched and saved games!",
   "games_saved": "integer",
   "credits_deducted": "integer",
-  "credits_remaining": "integer"
+  "credits_remaining": "integer",
+  "games": [
+    {
+      "id": "integer",
+      "platform": "string",
+      "white": "string",
+      "black": "string",
+      "opponent": "string",
+      "result": "string",
+      "date_played": "datetime",
+      "opening_name": "string",
+      "game_id": "string"
+    }
+  ]
 }
 ```
 
-### Get Saved Games
+### Get User Games
 ```http
-GET /api/games/saved
+GET /api/games/user
 ```
 
-Get list of saved games.
+Get list of games for the authenticated user.
 
 **Request Headers:**
 ```
 Authorization: Bearer <access_token>
 ```
 
+**Query Parameters:**
+```
+platform: all | chess.com | lichess (optional)
+```
+
 **Response:**
 ```json
-[
-  {
-    "id": "integer",
-    "opponent": "string",
-    "result": "string",
-    "played_at": "datetime",
-    "game_url": "string",
-    "opening_name": "string",
-    "is_white": "boolean",
-    "analysis": "object | null"
-  }
-]
+{
+  "games": [
+    {
+      "id": "integer",
+      "white": "string",
+      "black": "string",
+      "result": "string",
+      "date_played": "datetime",
+      "platform": "string",
+      "analysis": "object | null"
+    }
+  ]
+}
 ```
 
 ## Analysis
 
 ### Analyze Game
 ```http
-POST /api/analysis/game/{game_id}
+GET/POST /api/analysis/{game_id}
 ```
 
 Analyze a specific game.
@@ -155,7 +220,7 @@ Analyze a specific game.
 Authorization: Bearer <access_token>
 ```
 
-**Request Body:**
+**Request Body (POST only):**
 ```json
 {
   "depth": "integer (optional, default: 20)",
@@ -166,6 +231,7 @@ Authorization: Bearer <access_token>
 **Response:**
 ```json
 {
+  "message": "Analysis completed successfully!",
   "analysis": {
     "moves": [
       {
@@ -180,30 +246,36 @@ Authorization: Bearer <access_token>
   },
   "feedback": {
     "opening": {
-      "analysis": "string",
+      "accuracy": "float",
+      "played_moves": ["string"],
       "suggestions": ["string"]
     },
     "tactics": {
-      "analysis": "string",
+      "missed_opportunities": ["string"],
       "suggestions": ["string"]
     },
-    "strategy": {
-      "analysis": "string",
-      "suggestions": ["string"]
-    },
+    "mistakes": "integer",
+    "blunders": "integer",
+    "inaccuracies": "integer",
     "time_management": {
-      "analysis": "string",
+      "time_pressure_moves": ["integer"],
       "suggestions": ["string"]
     },
-    "endgame": {
-      "analysis": "string",
-      "suggestions": ["string"]
-    },
-    "study_plan": {
-      "focus_areas": ["string"],
-      "exercises": ["string"]
-    }
-  }
+    "strengths": [
+      {
+        "area": "string",
+        "description": "string"
+      }
+    ],
+    "improvement_areas": [
+      {
+        "area": "string",
+        "description": "string"
+      }
+    ],
+    "ai_suggestions": "string | object"
+  },
+  "credits_remaining": "integer"
 }
 ```
 
@@ -235,8 +307,16 @@ Authorization: Bearer <access_token>
   "results": {
     "individual_games": {
       "game_id": {
-        "analysis": "object",
-        "feedback": "object"
+        "blunders": "integer",
+        "mistakes": "integer",
+        "inaccuracies": "integer",
+        "opening": {
+          "accuracy": "float",
+          "played_moves": ["string"]
+        },
+        "time_management": {
+          "time_pressure_moves": ["integer"]
+        }
       }
     },
     "overall_stats": {
@@ -264,8 +344,50 @@ Authorization: Bearer <access_token>
         }
       ]
     },
-    "dynamic_feedback": "object"
+    "dynamic_feedback": "string | object"
   }
+}
+```
+
+## Dashboard
+
+### Get Dashboard Data
+```http
+GET /api/dashboard
+```
+
+Get user-specific games and statistics for the dashboard.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "total_games": "integer",
+  "analyzed_games": "integer",
+  "unanalyzed_games": "integer",
+  "statistics": {
+    "wins": "integer",
+    "losses": "integer",
+    "draws": "integer",
+    "win_rate": "float"
+  },
+  "recent_games": [
+    {
+      "id": "integer",
+      "platform": "string",
+      "white": "string",
+      "black": "string",
+      "opponent": "string",
+      "result": "string",
+      "date_played": "datetime",
+      "opening_name": "string",
+      "analysis": "object | null"
+    }
+  ]
 }
 ```
 

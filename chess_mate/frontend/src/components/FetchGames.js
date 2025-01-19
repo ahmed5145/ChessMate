@@ -5,8 +5,6 @@ import { toast } from 'react-hot-toast';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
-const CREDITS_PER_GAME = 1; // Each game fetch costs 1 credit
-
 const FetchGames = () => {
   const [platform, setPlatform] = useState('chess.com');
   const [username, setUsername] = useState('');

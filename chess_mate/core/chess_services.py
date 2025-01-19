@@ -9,8 +9,12 @@ from typing import List, Dict, Any, Optional
 from django.utils.timezone import make_aware, get_current_timezone
 import requests
 import ndjson  # type: ignore
+import httpx
+import logging
 
 from .models import Game
+
+logger = logging.getLogger(__name__)
 
 class ChessComService:
     """
@@ -36,46 +40,133 @@ class ChessComService:
         return []
 
     @staticmethod
-    def fetch_games(username: str, game_type: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Fetch games for a given username and game type.
-        
-        Args:
-            username: The username to fetch games for
-            game_type: The type of games to fetch (bullet, blitz, rapid, classical, or all)
-            limit: Maximum number of games to fetch (default: 10)
-        """
-        archives = ChessComService.fetch_archives(username)
-        games = []
-        for archive_url in archives:
-            new_games = ChessComService.fetch_games_from_archive(archive_url, game_type)
-            games.extend(new_games)
-            if len(games) >= limit:
-                break
-        return games[:limit]  # Ensure we don't return more than the limit
+    def _extract_pgn_info(pgn: str) -> Dict[str, Any]:
+        """Extract information from PGN headers."""
+        info = {}
+        try:
+            # Extract UTC date and time
+            utc_date = None
+            utc_time = None
+            opening_name = None
+            
+            for line in pgn.split('\n'):
+                if line.startswith('[UTCDate'):
+                    utc_date = line.split('"')[1]
+                elif line.startswith('[UTCTime'):
+                    utc_time = line.split('"')[1]
+                elif line.startswith('[ECOUrl'):
+                    eco_url = line.split('"')[1]
+                    if 'openings/' in eco_url:
+                        opening_name = eco_url.split('openings/')[1].replace('-', ' ')
+            
+            if utc_date and utc_time:
+                info['datetime'] = f"{utc_date} {utc_time}"
+            if opening_name:
+                info['opening_name'] = opening_name
+                
+        except Exception as e:
+            logger.error(f"Error extracting PGN info: {str(e)}")
+            
+        return info
 
     @staticmethod
-    def fetch_games_from_archive(archive_url: str, game_type: str) -> List[Dict[str, Any]]:
+    def fetch_games(username: str, game_type: str = "all", limit: int = 10) -> List[Dict[str, Any]]:
         """
-        Fetch games from a specific archive URL and filter by game type.
+        Fetch games from Chess.com API.
         """
-        headers = {
-            "User-Agent": "ChessMate/1.0 (your_email@example.com)"
-        }
-        response = requests.get(archive_url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            games = response.json().get("games", [])
-            if game_type == "all":
-                filtered_games = games
-            else:
-                filtered_games = [game for game in games if game.get("time_class") == game_type]
-            print(f"Games fetched: {len(filtered_games)} {game_type} games.")
-            return filtered_games
-        elif response.status_code == 403:
-            print("403 Forbidden: Ensure proper headers are included and access is allowed.")
+        try:
+            # First get the archives
+            archives_url = f"https://api.chess.com/pub/player/{username}/games/archives"
+            with httpx.Client() as client:
+                archives_response = client.get(archives_url)
+                archives_response.raise_for_status()
+                archives = archives_response.json().get("archives", [])
+                
+                logger.info(f"Archives fetched: {archives}")
+                
+                if not archives:
+                    logger.warning(f"No archives found for user {username}")
+                    return []
+
+                # Process archives in reverse order (newest first)
+                formatted_games = []
+                for archive_url in reversed(archives):
+                    try:
+                        games_response = client.get(archive_url)
+                        games_response.raise_for_status()
+                        games_data = games_response.json().get("games", [])
+                        
+                        logger.info(f"Processing archive {archive_url}, found {len(games_data)} games")
+                        
+                        # Filter and format games
+                        for game in games_data:
+                            # Skip if not the requested game type
+                            if game_type != "all" and game.get("time_class") != game_type:
+                                continue
+                            
+                            # Extract PGN info
+                            pgn_info = ChessComService._extract_pgn_info(game.get("pgn", ""))
+                            
+                            # Determine opponent
+                            white_username = game.get("white", {}).get("username", "Unknown")
+                            black_username = game.get("black", {}).get("username", "Unknown")
+                            opponent = black_username if username.lower() == white_username.lower() else white_username
+                            
+                            # Format the game data
+                            formatted_game = {
+                                "game_id": game.get("url", "").split("/")[-1],
+                                "platform": "chess.com",
+                                "white": white_username,
+                                "black": black_username,
+                                "opponent": opponent,
+                                "result": ChessComService._format_result(
+                                    game.get("white" if username.lower() == white_username.lower() else "black", {}).get("result", ""),
+                                    username
+                                ),
+                                "pgn": game.get("pgn", ""),
+                                "played_at": (
+                                    datetime.strptime(pgn_info['datetime'], "%Y.%m.%d %H:%M:%S")
+                                    if 'datetime' in pgn_info
+                                    else make_aware(datetime.fromtimestamp(game.get("end_time", 0)), timezone=get_current_timezone())
+                                ),
+                                "opening_name": (
+                                    pgn_info.get('opening_name')
+                                    or game.get("opening", {}).get("name")
+                                    or game.get("opening", {}).get("eco", {}).get("name", "Unknown Opening")
+                                )
+                            }
+                            
+                            logger.info(f"Formatted game: {formatted_game}")
+                            formatted_games.append(formatted_game)
+                            
+                            if len(formatted_games) >= limit:
+                                logger.info(f"Reached limit of {limit} games")
+                                return formatted_games
+                    except Exception as e:
+                        logger.error(f"Error processing archive {archive_url}: {str(e)}")
+                        continue
+                
+                logger.info(f"Total games fetched: {len(formatted_games)} {game_type} games")
+                return formatted_games
+
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error fetching games from Chess.com: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching games from Chess.com: {str(e)}")
+            raise
+
+    @staticmethod
+    def _format_result(result: str, username: str) -> str:
+        """Format the game result."""
+        if result == "win":
+            return "win"
+        elif result == "checkmated" or result == "resigned" or result == "timeout" or result == "abandoned":
+            return "loss"
+        elif result == "stalemate" or result == "agreed" or result == "repetition" or result == "insufficient":
+            return "draw"
         else:
-            print(f"Failed to fetch games - Status: {response.status_code}")
-        return []
+            return "unknown"
 
 class LichessService:
     """
@@ -84,55 +175,67 @@ class LichessService:
     BASE_URL = "https://lichess.org/api"
 
     @staticmethod
-    def fetch_games(username: str, game_type: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def fetch_games(username: str, game_type: str = "all", limit: int = 10) -> List[Dict[str, Any]]:
         """
-        Fetch games for a given username and game type.
-        
-        Args:
-            username: The username to fetch games for
-            game_type: The type of games to fetch (bullet, blitz, rapid, classical, or all)
-            limit: Maximum number of games to fetch (default: 10)
+        Fetch games from Lichess API.
         """
-        url = f"{LichessService.BASE_URL}/games/user/{username}"
-        params = {
-            "max": limit,  # Set the limit in the API request
-            "perfType": LichessService.map_game_type(game_type) if game_type != "all" else None
-        }
-        # Remove None values from params
-        params = {k: str(v) for k, v in params.items() if v is not None}
-        
-        headers = {"Accept": "application/x-ndjson"}
+        try:
+            url = f"https://lichess.org/api/games/user/{username}"
+            params = {
+                "max": limit,
+                "perfType": game_type if game_type != "all" else None,
+                "opening": True,
+                "clocks": True,
+                "evals": True,
+                "moves": True
+            }
+            
+            with httpx.Client() as client:
+                response = client.get(url, params={k: v for k, v in params.items() if v is not None})
+                response.raise_for_status()
+                
+                games = response.json()
+                formatted_games = []
+                
+                for game in games:
+                    white_username = game.get("players", {}).get("white", {}).get("user", {}).get("name", "Unknown")
+                    black_username = game.get("players", {}).get("black", {}).get("user", {}).get("name", "Unknown")
+                    opponent = black_username if username.lower() == white_username.lower() else white_username
+                    
+                    formatted_game = {
+                        "game_id": game.get("id"),
+                        "platform": "lichess",
+                        "white": white_username,
+                        "black": black_username,
+                        "opponent": opponent,
+                        "result": LichessService._format_result(game.get("winner"), username),
+                        "pgn": game.get("moves", ""),
+                        "played_at": make_aware(datetime.fromtimestamp(game.get("createdAt", 0) / 1000), timezone=get_current_timezone()),
+                        "opening_name": game.get("opening", {}).get("name") or game.get("opening", {}).get("eco", {}).get("name", "Unknown Opening")
+                    }
+                    formatted_games.append(formatted_game)
+                    
+                    if len(formatted_games) >= limit:
+                        break
+                
+                return formatted_games
 
-        response = requests.get(url,
-                              headers=headers,
-                              params=params,
-                              timeout=10)
-        response.raise_for_status()
-
-        games = []
-        for line in response.iter_lines():
-            if line:  # Skip empty lines
-                game_data = ndjson.loads(line.decode('utf-8'))
-                if isinstance(game_data, list):
-                    games.extend(game_data)
-                else:
-                    games.append(game_data)
-            if len(games) >= limit:  # Stop once we have enough games
-                break
-        return games[:limit]  # Ensure we don't return more than the limit
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error fetching games from Lichess: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching games from Lichess: {str(e)}")
+            raise
 
     @staticmethod
-    def map_game_type(chess_com_type: str) -> str:
-        """
-        Map Chess.com game types to Lichess variants.
-        """
-        mapping = {
-            "bullet": "bullet",
-            "blitz": "blitz",
-            "rapid": "rapid",
-            "classical": "classical"
-        }
-        return mapping.get(chess_com_type, "rapid")
+    def _format_result(winner: Optional[str], username: str) -> str:
+        """Format the game result."""
+        if winner is None:
+            return "draw"
+        elif winner == username:
+            return "win"
+        else:
+            return "loss"
 
 def save_game(game: Dict[str, Any], username: str, user) -> Optional[Game]:
     """

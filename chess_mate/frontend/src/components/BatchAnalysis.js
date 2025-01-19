@@ -1,184 +1,235 @@
-import React, { useState, useEffect } from "react";
-import { analyzeBatchGames } from "../api";
-import { useNavigate, useLocation } from "react-router-dom";
-import { CheckCircle, AlertCircle, Clock, Info, Target, Loader, Activity, ChevronLeft } from "lucide-react";
-import { toast } from "react-hot-toast";
-import "./BatchAnalysis.css";
+import React, { useState, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
+import { Loader2 } from 'lucide-react';
+
+const API_BASE_URL = 'http://localhost:8000/api';
 
 const BatchAnalysis = () => {
-  const [batchAnalysis, setBatchAnalysis] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [progress, setProgress] = useState(0);
+  const [numGames, setNumGames] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [results, setResults] = useState(null);
   const [estimatedTime, setEstimatedTime] = useState(0);
-  const location = useLocation();
-  const navigate = useNavigate();
-  const numGames = location.state?.numGames || 50;
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [startTime, setStartTime] = useState(null);
 
   useEffect(() => {
-    const fetchBatchAnalysis = async () => {
-      try {
-        setProgress(0);
-        const startTime = Date.now();
-        const data = await analyzeBatchGames(numGames);
-        const endTime = Date.now();
-        const timeTaken = (endTime - startTime) / 1000; // in seconds
-        setEstimatedTime(timeTaken);
-        console.log("Batch analysis data:", data);
-        setBatchAnalysis(data.results);
-        setProgress(100);
-      } catch (error) {
-        console.error("Error performing batch analysis:", error);
-        toast.error("An error occurred while performing batch analysis. Please try again.", {
-          position: "top-right",
-          autoClose: 5000,
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchBatchAnalysis();
-  }, [numGames]);
-
-  useEffect(() => {
-    if (loading && progress < 100) {
-      const interval = setInterval(() => {
-        setProgress((prevProgress) => {
-          const increment = numGames > 20 ? 1 : 2; // Faster progress for fewer games
-          const newProgress = Math.min(prevProgress + increment, 95); // Cap at 95% until complete
-          return newProgress;
-        });
-      }, Math.max(100, estimatedTime * 10)); // Minimum interval of 100ms
-      return () => clearInterval(interval);
+    let timer;
+    if (startTime && loading) {
+      timer = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setElapsedTime(elapsed);
+        
+        // Update estimated time based on current progress
+        if (progress.current > 0) {
+          const timePerGame = elapsed / progress.current;
+          const remainingGames = progress.total - progress.current;
+          const newEstimate = Math.ceil(timePerGame * remainingGames);
+          setEstimatedTime(newEstimate);
+        }
+      }, 1000);
     }
-  }, [loading, estimatedTime, numGames, progress]);
+    return () => clearInterval(timer);
+  }, [startTime, loading, progress]);
 
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <Loader className="loader-icon animate-spin" />
-        <h2 className="text-xl font-semibold mb-4">Analyzing {numGames} Games...</h2>
-        <div className="progress-bar">
-          <div className="progress" style={{ width: `${progress}%` }}></div>
-        </div>
-        <p className="mt-2 text-gray-600">{progress.toFixed(1)}% Complete</p>
-        <p className="mt-1 text-sm text-gray-500">
-          {progress < 100 
-            ? "Analyzing moves and generating insights..."
-            : "Finalizing analysis..."}
-        </p>
-        <p className="mt-1 text-sm text-gray-500">
-          Estimated time remaining: {((estimatedTime * (100 - progress)) / 100).toFixed(1)} seconds
-        </p>
-      </div>
-    );
-  }
+  const handleAnalysis = async () => {
+    if (!numGames) {
+      toast.error('Please enter the number of games to analyze');
+      return;
+    }
 
-  if (!batchAnalysis) {
-    return (
-      <div className="loading-screen">
-        <AlertCircle className="loader-icon" />
-        <h2>Error loading analysis results. Please try again later.</h2>
-      </div>
-    );
-  }
+    try {
+      setLoading(true);
+      setStartTime(Date.now());
+      setProgress({ current: 0, total: parseInt(numGames) });
+      // Initial estimate: 30 seconds per game
+      setEstimatedTime(parseInt(numGames) * 30);
+
+      const response = await fetch(`${API_BASE_URL}/games/batch-analyze/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${JSON.parse(localStorage.getItem('tokens')).access}`
+        },
+        body: JSON.stringify({ num_games: parseInt(numGames) })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to analyze games');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        try {
+          const data = JSON.parse(chunk);
+          if (data.progress) {
+            setProgress(data.progress);
+          }
+        } catch (e) {
+          console.error('Error parsing progress update:', e);
+        }
+      }
+
+      const data = await response.json();
+      setResults(data.results);
+      toast.success('Batch analysis completed!');
+    } catch (error) {
+      console.error('Error during batch analysis:', error);
+      toast.error(error.message || 'Failed to analyze games');
+    } finally {
+      setLoading(false);
+      setStartTime(null);
+      setEstimatedTime(0);
+    }
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
-    <div className="batch-analysis-results">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800 flex items-center">
-        <Activity className="w-6 h-6 mr-2" />
-        Analysis Results
-      </h2>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="feedback-section bg-blue-50 p-4 rounded-lg">
-          <h3 className="flex items-center text-blue-800">
-            <Clock className="w-5 h-5 mr-2" />
-            Time Management
-          </h3>
-          <div className="mt-3 text-gray-700">
-            <p className="mb-2">
-              <span className="font-medium">Average Time per Move:</span>{" "}
-              {batchAnalysis.timeManagement?.avgTimePerMove?.toFixed(2) || "N/A"} seconds
-            </p>
-            <p className="text-sm bg-white p-3 rounded border border-blue-100">
-              {batchAnalysis.timeManagement?.suggestion}
-            </p>
-          </div>
-        </div>
-
-        <div className="feedback-section bg-green-50 p-4 rounded-lg">
-          <h3 className="flex items-center text-green-800">
-            <Info className="w-5 h-5 mr-2" />
-            Opening Analysis
-          </h3>
-          <div className="mt-3 text-gray-700">
-            <p className="mb-2">
-              <span className="font-medium">Common Openings:</span>{" "}
-              {batchAnalysis.opening?.playedMoves?.join(", ") || "N/A"}
-            </p>
-            <p className="text-sm bg-white p-3 rounded border border-green-100">
-              {batchAnalysis.opening?.suggestion}
-            </p>
-          </div>
-        </div>
-
-        <div className="feedback-section bg-purple-50 p-4 rounded-lg">
-          <h3 className="flex items-center text-purple-800">
-            <CheckCircle className="w-5 h-5 mr-2" />
-            Endgame Performance
-          </h3>
-          <div className="mt-3 text-gray-700">
-            <p className="mb-2">{batchAnalysis.endgame?.evaluation}</p>
-            <p className="text-sm bg-white p-3 rounded border border-purple-100">
-              {batchAnalysis.endgame?.suggestion}
-            </p>
-          </div>
-        </div>
-
-        <div className="feedback-section bg-yellow-50 p-4 rounded-lg">
-          <h3 className="flex items-center text-yellow-800">
-            <Target className="w-5 h-5 mr-2" />
-            Tactical Opportunities
-          </h3>
-          <div className="mt-3 text-gray-700">
-            {batchAnalysis.tacticalOpportunities?.length > 0 ? (
-              <ul className="list-disc list-inside space-y-1">
-                {batchAnalysis.tacticalOpportunities.map((opportunity, index) => (
-                  <li key={index} className="text-sm">{opportunity}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm bg-white p-3 rounded border border-yellow-100">
-                No significant tactical opportunities were missed in the analyzed games.
-              </p>
-            )}
-          </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="sm:flex sm:items-center">
+        <div className="sm:flex-auto">
+          <h1 className="text-3xl font-bold text-gray-900">Batch Analysis</h1>
+          <p className="mt-2 text-sm text-gray-700">
+            Analyze multiple games at once to get insights into your playing patterns.
+          </p>
         </div>
       </div>
 
-      {batchAnalysis.dynamicFeedback && (
-        <div className="feedback-section mt-6 bg-indigo-50 p-4 rounded-lg">
-          <h3 className="flex items-center text-indigo-800">
-            <AlertCircle className="w-5 h-5 mr-2" />
-            Overall Assessment
-          </h3>
-          <div className="mt-3 text-gray-700">
-            <p className="text-sm bg-white p-3 rounded border border-indigo-100">
-              {batchAnalysis.dynamicFeedback}
-            </p>
+      <div className="mt-8 max-w-xl">
+        <div className="space-y-6">
+          <div>
+            <label htmlFor="numGames" className="block text-sm font-medium text-gray-700">
+              Number of Games to Analyze
+            </label>
+            <div className="mt-1">
+              <input
+                type="number"
+                name="numGames"
+                id="numGames"
+                min="1"
+                max="50"
+                value={numGames}
+                onChange={(e) => setNumGames(Math.min(50, Math.max(1, parseInt(e.target.value) || 1)))}
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              />
+            </div>
+            <p className="mt-2 text-sm text-gray-500">Maximum 50 games can be analyzed at once.</p>
           </div>
-        </div>
-      )}
 
-      <div className="flex justify-center mt-8">
-        <button
-          onClick={() => navigate("/dashboard")}
-          className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center"
-        >
-          <ChevronLeft className="w-4 h-4 mr-2" />
-          Back to Dashboard
-        </button>
+          <button
+            onClick={handleAnalysis}
+            disabled={loading}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                Analyzing...
+              </>
+            ) : (
+              'Start Analysis'
+            )}
+          </button>
+        </div>
+
+        {loading && (
+          <div className="mt-4 space-y-4">
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div 
+                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500"
+                style={{ width: `${(progress.current / progress.total) * 100}%` }}
+              ></div>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>Progress: {progress.current}/{progress.total} games</span>
+              <span>Elapsed Time: {formatTime(elapsedTime)}</span>
+              <span>Estimated Time Remaining: {formatTime(estimatedTime)}</span>
+            </div>
+          </div>
+        )}
+
+        {results && (
+          <div className="mt-8">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">Analysis Results</h2>
+            
+            {/* Overall Stats */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+              <div className="px-4 py-5 sm:px-6">
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Overall Statistics</h3>
+              </div>
+              <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+                <dl className="grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2">
+                  <div className="sm:col-span-1">
+                    <dt className="text-sm font-medium text-gray-500">Games Analyzed</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{results.overall_stats.total_games}</dd>
+                  </div>
+                  <div className="sm:col-span-1">
+                    <dt className="text-sm font-medium text-gray-500">Average Accuracy</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {results.overall_stats.average_accuracy.toFixed(1)}%
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-sm font-medium text-gray-500">Results Distribution</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      Wins: {results.overall_stats.wins} | 
+                      Draws: {results.overall_stats.draws} | 
+                      Losses: {results.overall_stats.losses}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+
+            {/* Improvement Areas */}
+            {results.overall_stats.improvement_areas.length > 0 && (
+              <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+                <div className="px-4 py-5 sm:px-6">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Areas for Improvement</h3>
+                </div>
+                <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+                  <ul className="space-y-4">
+                    {results.overall_stats.improvement_areas.map((area, index) => (
+                      <li key={index} className="text-sm text-gray-900">
+                        <span className="font-medium">{area.area}:</span> {area.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* Strengths */}
+            {results.overall_stats.strengths.length > 0 && (
+              <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+                <div className="px-4 py-5 sm:px-6">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Your Strengths</h3>
+                </div>
+                <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+                  <ul className="space-y-4">
+                    {results.overall_stats.strengths.map((strength, index) => (
+                      <li key={index} className="text-sm text-gray-900">
+                        <span className="font-medium">{strength.area}:</span> {strength.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

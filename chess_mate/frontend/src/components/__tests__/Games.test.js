@@ -140,7 +140,7 @@ describe('Games Component', () => {
     await waitFor(() => {
       const analyzeButtons = screen.getAllByRole('button', { name: /analyze/i });
       fireEvent.click(analyzeButtons[0]);
-      expect(mockNavigate).toHaveBeenCalledWith('/game/1/analysis');
+      expect(mockNavigate).toHaveBeenCalledWith('/analysis/1');
     });
   });
 }); 

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Email Verification - ChessMate</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            text-align: center;
+        }
+        .header {
+            background-color: #4F46E5;
+            color: white;
+            padding: 30px 20px;
+            position: relative;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .chess-pattern {
+            height: 8px;
+            background-image: linear-gradient(45deg, #4F46E5 25%, #4338CA 25%, #4338CA 50%, #4F46E5 50%, #4F46E5 75%, #4338CA 75%, #4338CA 100%);
+            background-size: 8px 8px;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .success-icon {
+            font-size: 48px;
+            color: #10B981;
+            margin-bottom: 20px;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #4F46E5;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            margin: 20px 0;
+            transition: background-color 0.3s ease;
+        }
+        .button:hover {
+            background-color: #4338CA;
+        }
+        .message {
+            font-size: 18px;
+            color: #4a5568;
+            margin-bottom: 20px;
+        }
+        .footer {
+            margin-top: auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+            font-size: 12px;
+            color: #6c757d;
+            text-align: center;
+            width: 100%;
+        }
+        @keyframes checkmark {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        .checkmark {
+            animation: checkmark 0.5s ease-in-out forwards;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chess-pattern"></div>
+        <div class="header">
+            <h1>ChessMate Account Verification</h1>
+        </div>
+        
+        <div class="content">
+            <div class="success-icon checkmark">✓</div>
+            <div class="message">
+                <h2>Email Verified Successfully!</h2>
+                <p>Your account has been activated and you can now log in to ChessMate.</p>
+                <p>Get ready to analyze your games and improve your chess skills!</p>
+            </div>
+            <a href="http://localhost:3000/login" class="button">Log In Now</a>
+        </div>
+        
+        <div class="chess-pattern"></div>
+    </div>
+    
+    <div class="footer">
+        <p>&copy; 2024 ChessMate. All rights reserved.</p>
+    </div>
+</body>
+</html> 
