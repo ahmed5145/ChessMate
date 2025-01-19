@@ -218,9 +218,9 @@ if not (TESTING := os.environ.get('TESTING', False)):
     EMAIL_HOST = 'smtp.gmail.com'  # Gmail SMTP server
     EMAIL_PORT = '587'  # Gmail SMTP port
     EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', '')
 else:
     # Use console backend for testing
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
@@ -231,8 +231,8 @@ else:
     EMAIL_HOST_PASSWORD = ''
     DEFAULT_FROM_EMAIL = ''
 
-# Make sure email settings are loaded
-if not all([EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, DEFAULT_FROM_EMAIL]):
+# Make sure email settings are loaded in production, but allow empty values in testing
+if not TESTING and not all([EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, DEFAULT_FROM_EMAIL]):
     raise ValueError("Email settings are not properly configured. Check your .env file.")
 
 # Stripe Configuration
