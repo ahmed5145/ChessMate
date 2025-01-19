@@ -60,7 +60,7 @@ jobs:
         python -m pytest --cov=./ --cov-report=xml core/tests/
 
     - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ./chess_mate/coverage.xml
