@@ -56,8 +56,10 @@ jobs:
         cd chess_mate
         python -m pytest --cov=./ --cov-report=xml core/tests/
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v2
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v3
       with:
-        file: ./chess_mate/coverage.xml
-        fail_ci_if_error: true 
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./chess_mate/coverage.xml
+        fail_ci_if_error: true
+        verbose: true 
