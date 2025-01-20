@@ -7,15 +7,15 @@ import { UserProvider } from './contexts/UserContext';
 
 function App() {
   return (
-    <Router>
-      <UserProvider>
+    <UserProvider>
+      <Router>
         <div className="min-h-screen bg-gray-50">
           <Navbar />
           <AppRoutes />
           <Toaster position="top-right" />
         </div>
-      </UserProvider>
-    </Router>
+      </Router>
+    </UserProvider>
   );
 }
 

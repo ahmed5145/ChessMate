@@ -25,29 +25,51 @@ class Player(models.Model):
         return str(self.username)
 
 class Profile(models.Model):
-    """Model representing a user profile."""
+    """User profile model."""
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    rating = models.IntegerField(default=1500)
-    credits = models.IntegerField(default=10, validators=[MinValueValidator(0)])
-    total_games = models.IntegerField(default=0)
-    win_rate = models.FloatField(default=0.0)
-    recent_performance = models.CharField(max_length=20, default='stable')
-    preferred_openings = models.JSONField(default=list)
-    
-    # Email verification fields
-    email_verified = models.BooleanField(default=False)
-    email_verification_token = models.CharField(max_length=100, null=True, blank=True)
-    email_verification_sent_at = models.DateTimeField(null=True, blank=True)
-    email_verified_at = models.DateTimeField(null=True, blank=True)
-    
+    rating = models.IntegerField(default=1200)
+    credits = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    email_verified = models.BooleanField(default=False)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    email_verification_token = models.CharField(max_length=100, null=True, blank=True)
+    email_verification_sent_at = models.DateTimeField(null=True, blank=True)
+    preferences = models.JSONField(default=dict, blank=True)
 
-    def __str__(self) -> str:
+    def total_games(self):
+        return self.user.game_set.count()
+
+    def win_rate(self):
+        total = self.total_games()
+        if total == 0:
+            return "0%"
+        wins = self.user.game_set.filter(result="win").count()
+        return f"{(wins / total * 100):.1f}%"
+
+    def __str__(self):
         return f"{self.user.username}'s profile"
 
     class Meta:
-        db_table = 'user_profile'
+        indexes = [
+            models.Index(fields=['user', 'rating']),
+        ]
+
+    def verify_email(self):
+        """Mark email as verified."""
+        self.email_verified = True
+        self.email_verified_at = timezone.now()
+        self.email_verification_token = None
+        self.save()
+
+    def get_preference(self, key, default=None):
+        """Get a specific preference value."""
+        return self.preferences.get(key, default)
+
+    def set_preference(self, key, value):
+        """Set a specific preference value."""
+        self.preferences[key] = value
+        self.save()
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender: Any, instance: User, created: bool, **kwargs: Any) -> None:

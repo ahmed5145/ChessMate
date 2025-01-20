@@ -125,6 +125,69 @@ Logout and blacklist the refresh token.
 }
 ```
 
+### Request Password Reset
+```http
+POST /api/auth/password-reset
+```
+
+Request a password reset link.
+
+**Request Body:**
+```json
+{
+  "email": "string"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Password reset link has been sent to your email."
+}
+```
+
+**Error Response:**
+```json
+{
+  "error": "Email is required."
+}
+```
+
+### Reset Password
+```http
+POST /api/auth/password-reset/confirm
+```
+
+Reset password using the token from the email link.
+
+**Request Body:**
+```json
+{
+  "uid": "string",
+  "token": "string",
+  "new_password": "string"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Password has been reset successfully."
+}
+```
+
+**Error Responses:**
+```json
+{
+  "error": "Invalid or expired reset link."
+}
+```
+```json
+{
+  "error": "All fields are required."
+}
+```
+
 ## Games
 
 ### Fetch Games
@@ -472,10 +535,10 @@ Authorization: Bearer <access_token>
 
 ### Get Profile
 ```http
-GET /api/user/profile
+GET /api/profile
 ```
 
-Get user profile information.
+Get the authenticated user's profile information.
 
 **Request Headers:**
 ```
@@ -488,18 +551,23 @@ Authorization: Bearer <access_token>
   "username": "string",
   "email": "string",
   "rating": "integer",
-  "total_games": "integer",
-  "preferred_openings": ["string"],
-  "credits": "integer"
+  "credits": "integer",
+  "preferences": {
+    "emailNotifications": "boolean",
+    "darkMode": "boolean",
+    "autoAnalyze": "boolean"
+  },
+  "created_at": "datetime",
+  "games_analyzed": "integer"
 }
 ```
 
 ### Update Profile
 ```http
-PUT /api/user/profile
+PATCH /api/profile
 ```
 
-Update user profile information.
+Update the authenticated user's profile information.
 
 **Request Headers:**
 ```
@@ -509,23 +577,32 @@ Authorization: Bearer <access_token>
 **Request Body:**
 ```json
 {
-  "rating": "integer (optional)",
-  "preferred_openings": ["string"] (optional)
+  "username": "string (optional)",
+  "preferences": {
+    "emailNotifications": "boolean (optional)",
+    "darkMode": "boolean (optional)",
+    "autoAnalyze": "boolean (optional)"
+  }
 }
 ```
 
 **Response:**
 ```json
 {
-  "message": "Profile updated successfully",
-  "profile": {
-    "username": "string",
-    "email": "string",
-    "rating": "integer",
-    "total_games": "integer",
-    "preferred_openings": ["string"],
-    "credits": "integer"
+  "message": "Profile updated successfully.",
+  "username": "string",
+  "preferences": {
+    "emailNotifications": "boolean",
+    "darkMode": "boolean",
+    "autoAnalyze": "boolean"
   }
+}
+```
+
+**Error Responses:**
+```json
+{
+  "error": "Username already taken."
 }
 ```
 

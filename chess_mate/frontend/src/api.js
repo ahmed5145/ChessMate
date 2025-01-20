@@ -1,8 +1,8 @@
 import axios from "axios";
 import { jwtDecode } from "jwt-decode";
 
-// Set the base URL for API requests
-const API_BASE_URL = "http://localhost:8000/api"; // Update if needed for deployment
+// API Configuration
+export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 // Configure axios instance
 const api = axios.create({
@@ -226,4 +226,77 @@ export const logoutUser = async () => {
     localStorage.removeItem("refresh_token");
     localStorage.removeItem("tokens");
   }
+};
+
+export const requestPasswordReset = async (email) => {
+  const response = await fetch(`${API_BASE_URL}/auth/password-reset/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to request password reset");
+  }
+  return data;
+};
+
+export const resetPassword = async (uid, token, newPassword) => {
+  const response = await fetch(`${API_BASE_URL}/auth/password-reset/confirm/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ uid, token, new_password: newPassword }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to reset password");
+  }
+  return data;
+};
+
+const getToken = () => {
+  const tokens = localStorage.getItem('tokens');
+  if (!tokens) {
+    throw new Error('No authentication token found');
+  }
+  return JSON.parse(tokens).access;
+};
+
+export const getUserProfile = async () => {
+  const response = await fetch(`${API_BASE_URL}/profile/`, {
+    headers: {
+      'Authorization': `Bearer ${getToken()}`,
+    },
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error || 'Failed to fetch profile');
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+};
+
+export const updateUserProfile = async (profileData) => {
+  const response = await fetch(`${API_BASE_URL}/profile/`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(profileData),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error || 'Failed to update profile');
+    error.status = response.status;
+    throw error;
+  }
+  return data;
 };

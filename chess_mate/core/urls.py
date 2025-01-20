@@ -13,6 +13,11 @@ urlpatterns = [
     path("api/login/", views.login_view, name="login"),
     path("api/logout/", views.logout_view, name="logout"),
     path('api/token/refresh/', views.token_refresh_view, name='token_refresh'),
+    path('api/auth/password-reset/', views.request_password_reset, name='password_reset_request'),
+    path('api/auth/password-reset/confirm/', views.reset_password, name='password_reset_confirm'),
+
+    # Profile endpoints
+    path('api/profile/', views.user_profile, name='user_profile'),
 
     # Game management endpoints
     path('api/fetch-games/', views.fetch_games, name='fetch_games'),

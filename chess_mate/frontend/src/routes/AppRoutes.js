@@ -2,27 +2,56 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from '../components/Login';
 import Register from '../components/Register';
+import ForgotPassword from '../components/ForgotPassword';
+import ResetPassword from '../components/ResetPassword';
+import ResetPasswordSuccess from '../components/ResetPasswordSuccess';
+import ResetPasswordFailed from '../components/ResetPasswordFailed';
+import UserProfile from '../components/UserProfile';
 import Dashboard from '../components/Dashboard';
 import BatchAnalysis from '../components/BatchAnalysis';
-import SingleGameAnalysis from '../components/SingleGameAnalysis';
 import FetchGames from '../components/FetchGames';
 import Credits from '../components/Credits';
 import PaymentSuccess from '../components/PaymentSuccess';
 import PaymentCancel from '../components/PaymentCancel';
 import Games from '../components/Games';
 import PrivateRoute from '../components/PrivateRoute';
+import GameAnalysis from '../components/GameAnalysis';
+import ProtectedRoute from './ProtectedRoute';
 
 const AppRoutes = () => {
+  const isAuthenticated = !!localStorage.getItem('tokens');
+
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
+      <Route path="/password-reset-success" element={<ResetPasswordSuccess />} />
+      <Route path="/password-reset-failed" element={<ResetPasswordFailed />} />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <UserProfile />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/dashboard"
         element={
-          <PrivateRoute>
+          <ProtectedRoute>
             <Dashboard />
-          </PrivateRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/analysis/:gameId"
+        element={
+          <ProtectedRoute>
+            <GameAnalysis />
+          </ProtectedRoute>
         }
       />
       <Route
@@ -30,14 +59,6 @@ const AppRoutes = () => {
         element={
           <PrivateRoute>
             <BatchAnalysis />
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/analysis/:gameId"
-        element={
-          <PrivateRoute>
-            <SingleGameAnalysis />
           </PrivateRoute>
         }
       />
@@ -81,7 +102,6 @@ const AppRoutes = () => {
           </PrivateRoute>
         }
       />
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 };

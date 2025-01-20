@@ -26,8 +26,8 @@ from django_ratelimit.decorators import ratelimit   # type: ignore
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
-from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
 from django.template.loader import render_to_string
 from django.contrib.sites.shortcuts import get_current_site
 from django.urls import reverse
@@ -41,6 +41,8 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 import chess.engine
 from openai import OpenAI
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.html import strip_tags
 
 # Local application imports
 from .models import Game, GameAnalysis, Profile, Transaction
@@ -1147,9 +1149,10 @@ def all_games_view(request):
 def get_credits(request):
     """Get the current user's credit balance."""
     try:
-        profile = Profile.objects.select_for_update().get(user=request.user)
-        logger.info(f"Retrieved credits for user {request.user.username}: {profile.credits}")
-        return Response({'credits': profile.credits})
+        with transaction.atomic():
+            profile = Profile.objects.select_for_update().get(user=request.user)
+            logger.info(f"Retrieved credits for user {request.user.username}: {profile.credits}")
+            return Response({'credits': profile.credits})
     except Profile.DoesNotExist:
         logger.error(f"Profile not found for user {request.user.username}")
         return Response({'error': 'Profile not found'}, status=404)
@@ -1336,3 +1339,204 @@ def token_refresh_view(request):
         })
     except Exception as e:
         return Response({'error': str(e)}, status=400)
+
+@csrf_exempt
+@api_view(["POST"])
+def request_password_reset(request):
+    """
+    Handle password reset request.
+    """
+    try:
+        email = request.data.get("email")
+        if not email:
+            return Response(
+                {"error": "Email is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Don't reveal that the user doesn't exist
+            return Response(
+                {"message": "If an account exists with this email, you will receive a password reset link."},
+                status=status.HTTP_200_OK
+            )
+
+        # Generate password reset token
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        
+        # Build reset URL
+        current_site = get_current_site(request)
+        reset_url = f"http://{current_site.domain}/reset-password/{uid}/{token}/"
+        
+        # Send reset email
+        try:
+            send_password_reset_email(user, reset_url)
+        except Exception as e:
+            logger.error(f"Failed to send password reset email: {str(e)}")
+            return Response(
+                {"error": "Failed to send password reset email. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        return Response(
+            {"message": "Password reset link has been sent to your email."},
+            status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        logger.error(f"Password reset request error: {str(e)}")
+        return Response(
+            {"error": "An error occurred. Please try again."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@csrf_exempt
+@api_view(["POST"])
+def reset_password(request):
+    """
+    Handle password reset with token.
+    """
+    try:
+        uid = request.data.get("uid")
+        token = request.data.get("token")
+        new_password = request.data.get("new_password")
+
+        if not all([uid, token, new_password]):
+            return Response(
+                {"error": "All fields are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            uid = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response(
+                {"error": "invalid_token", "message": "Invalid reset link."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not default_token_generator.check_token(user, token):
+            return Response(
+                {"error": "expired_token", "message": "Invalid or expired reset link."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate password complexity
+        try:
+            validate_password_complexity(new_password)
+        except ValidationError as e:
+            return Response(
+                {"error": "complexity", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if new password is the same as old password
+        if user.check_password(new_password):
+            return Response(
+                {"error": "same_password", "message": "New password cannot be the same as your old password."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Set new password
+        user.set_password(new_password)
+        user.save()
+
+        return Response(
+            {"message": "Password has been reset successfully."},
+            status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        logger.error(f"Password reset error: {str(e)}")
+        return Response(
+            {"error": "server_error", "message": "An error occurred. Please try again."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@csrf_exempt
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def user_profile(request):
+    """
+    Handle user profile operations.
+    """
+    try:
+        if request.method == "GET":
+            profile = Profile.objects.get(user=request.user)
+            return Response({
+                "username": request.user.username,
+                "email": request.user.email,
+                "rating": profile.rating,
+                "credits": profile.credits,
+                "preferences": profile.preferences,
+                "created_at": profile.created_at,
+                "games_analyzed": Game.objects.filter(user=request.user).count(),
+            })
+        
+        elif request.method == "PATCH":
+            data = request.data
+            user = request.user
+            profile = Profile.objects.get(user=user)
+            
+            # Update username if provided and available
+            new_username = data.get("username")
+            if new_username and new_username != user.username:
+                if User.objects.filter(username=new_username).exists():
+                    return Response(
+                        {"error": "Username already taken."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                user.username = new_username
+            
+            # Update preferences
+            new_preferences = data.get("preferences")
+            if new_preferences:
+                profile.preferences = {
+                    **profile.preferences,
+                    **new_preferences
+                }
+            
+            # Save changes
+            user.save()
+            profile.save()
+            
+            return Response({
+                "message": "Profile updated successfully.",
+                "username": user.username,
+                "preferences": profile.preferences
+            })
+            
+    except Profile.DoesNotExist:
+        return Response(
+            {"error": "Profile not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Profile operation error: {str(e)}")
+        return Response(
+            {"error": "An error occurred. Please try again."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+def send_password_reset_email(user, reset_url):
+    """Send password reset email to user."""
+    subject = "Reset your ChessMate password"
+    html_message = render_to_string(
+        "email/password_reset.html",
+        {
+            "user": user,
+            "reset_url": reset_url
+        }
+    )
+    plain_message = strip_tags(html_message)
+    
+    send_mail(
+        subject,
+        plain_message,
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        html_message=html_message,
+        fail_silently=False,
+    )

@@ -68,7 +68,10 @@ ROOT_URLCONF = 'chess_mate.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'templates')],
+        'DIRS': [
+            os.path.join(BASE_DIR, 'frontend', 'build'),
+            os.path.join(BASE_DIR, 'core', 'templates'),
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -163,10 +166,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),
+    os.path.join(BASE_DIR, 'frontend', 'build', 'static'),
 ]
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Media files configuration
 MEDIA_URL = '/media/'
@@ -178,9 +181,12 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only in development
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
+    "http://localhost:3000",  # React development server
+    "http://localhost:3001",  # Serve static build
+    "http://localhost:4000",  # Alternative port
+    "http://localhost:5000",  # Alternative port
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -209,6 +215,9 @@ CORS_ALLOW_HEADERS = [
 #CSRF settings
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:4000",
+    "http://localhost:5000",
 ]
 
 # Stockfish configuration
@@ -231,24 +240,13 @@ SIMPLE_JWT = {
 }
 
 # Email Configuration
-if not TESTING:
-    # Only enforce email settings in non-testing environment
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = 'smtp.gmail.com'  # Gmail SMTP server
-    EMAIL_PORT = '587'  # Gmail SMTP port
-    EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', '')
-else:
-    # Use console backend for testing
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-    EMAIL_HOST = 'localhost'
-    EMAIL_PORT = '25'
-    EMAIL_USE_TLS = False
-    EMAIL_HOST_USER = ''
-    EMAIL_HOST_PASSWORD = ''
-    DEFAULT_FROM_EMAIL = ''
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@chessmate.com')
 
 # Make sure email settings are loaded in production, but allow empty values in testing
 if not TESTING and not all([EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, DEFAULT_FROM_EMAIL]):

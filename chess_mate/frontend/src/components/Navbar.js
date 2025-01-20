@@ -21,6 +21,13 @@ const Navbar = () => {
     return location.pathname === path;
   };
 
+  const navigation = [
+    { name: "Dashboard", href: "/dashboard" },
+    { name: "Games", href: "/games" },
+    { name: "Analysis", href: "/analysis" },
+    { name: "Profile", href: "/profile" },
+  ];
+
   return (
     <nav className="bg-white shadow">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
