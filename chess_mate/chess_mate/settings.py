@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import os
 from datetime import timedelta
 from pathlib import Path
+from typing import Union
 from dotenv import load_dotenv
 
 # Load environment variables first
@@ -111,7 +112,7 @@ else:
     }
 
 # Connection age settings
-CONN_MAX_AGE: int | None = 600  # 10 minutes persistent connections
+CONN_MAX_AGE: Union[int, None] = 600  # 10 minutes persistent connections
 
 # Add database indexes
 INDEXES = {
