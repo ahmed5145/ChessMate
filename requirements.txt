@@ -15,7 +15,7 @@ colorama==0.4.6
 coverage==7.6.10
 distro==1.9.0
 dj-database-url==2.3.0
-Django==5.1.4
+Django==5.0.1
 django-cors-headers==4.6.0
 django-ratelimit==4.1.0
 django-stubs==5.1.1
