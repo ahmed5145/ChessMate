@@ -11,3 +11,7 @@ migrations/
 node_modules/
 
 .env
+
+*.sql
+*.dump
+/backups/

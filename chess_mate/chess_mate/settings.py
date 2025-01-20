@@ -20,12 +20,14 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Testing mode flag - must be defined before any dependent settings
+TESTING: bool = os.environ.get('TESTING', 'False').lower() == 'true'
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-$cxqc=&&9xwbq%)0xd^!*s$u3_d&u61f-is2u=ffb6!cv@-dob')
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-key-for-dev')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
@@ -84,29 +86,45 @@ WSGI_APPLICATION = 'chess_mate.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Database configuration
-if os.getenv('DATABASE_URL'):
-    # Parse database URL for production
-    import dj_database_url
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.getenv('DATABASE_URL'),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
-else:
-    # Default SQLite configuration
+if TESTING:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
-            'ATOMIC_REQUESTS': True,
+        }
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'chessmate'),
+            'USER': os.getenv('DB_USER', 'postgres'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+            'CONN_MAX_AGE': 600,  # 10 minutes connection persistence
             'OPTIONS': {
-                'timeout': 30,
+                'connect_timeout': 10,
+                'client_encoding': 'UTF8'
             },
         }
     }
+
+# Connection age settings
+CONN_MAX_AGE: int | None = 600  # 10 minutes persistent connections
+
+# Add database indexes
+INDEXES = {
+    'core.Game': {
+        'fields': ['user', 'date_played', 'platform', 'result'],
+    },
+    'core.Profile': {
+        'fields': ['user', 'rating'],
+    },
+    'core.GameAnalysis': {
+        'fields': ['game', 'created_at'],
+    },
+}
 
 
 # Password validation
@@ -212,7 +230,7 @@ SIMPLE_JWT = {
 }
 
 # Email Configuration
-if not (TESTING := os.environ.get('TESTING', False)):
+if not TESTING:
     # Only enforce email settings in non-testing environment
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = 'smtp.gmail.com'  # Gmail SMTP server
