@@ -15,3 +15,7 @@ node_modules/
 *.sql
 *.dump
 /backups/
+
+local_ci_test.bat
+redis.windows.conf
+dump.rdb

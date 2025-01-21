@@ -25,8 +25,8 @@ urlpatterns = [
     path("api/games/", views.get_saved_games, name="get_saved_games"),
 
     # Analysis endpoints
-    path("api/game/<int:game_id>/analysis/", views.analyze_game_view, name="analyze_game"),
-    path("api/games/batch-analyze/", views.analyze_batch_games_view, name="batch_analyze_games"),
+    path("api/game/<int:game_id>/analysis/", views.analyze_game, name="analyze_game"),
+    path("api/games/batch-analyze/", views.batch_analyze, name="batch_analyze_games"),
 
     # Feedback endpoints
     path('api/feedback/<int:game_id>/', views.game_feedback_view, name='game_feedback'),

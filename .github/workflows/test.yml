@@ -9,6 +9,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     env:
       DJANGO_SETTINGS_MODULE: chess_mate.settings
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -21,6 +33,7 @@ jobs:
       EMAIL_HOST_USER: ${{ secrets.EMAIL_HOST_USER }}
       EMAIL_HOST_PASSWORD: ${{ secrets.EMAIL_HOST_PASSWORD }}
       DEFAULT_FROM_EMAIL: ${{ secrets.DEFAULT_FROM_EMAIL }}
+      REDIS_URL: redis://localhost:6379/0
 
     strategy:
       matrix:
@@ -37,13 +50,13 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y stockfish
+        sudo apt-get install -y stockfish redis-tools
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-django pytest-cov
+        pip install pytest pytest-django pytest-cov pytest-redis
 
     - name: Setup test environment
       run: |

@@ -122,8 +122,8 @@ class EmailVerificationToken:
         except Exception:
             return False
 
-@csrf_exempt
-@api_view(["POST"])
+@rate_limit(endpoint_type='AUTH')
+@api_view(['POST'])
 def register_view(request):
     """
     Handle user registration with email verification.
@@ -300,8 +300,8 @@ def verify_email(request, uidb64, token):
             'error': 'Invalid verification link.'
         }, status=400)
 
-@csrf_exempt
-@api_view(["POST"])
+@rate_limit(endpoint_type='AUTH')
+@api_view(['POST'])
 def login_view(request):
     """
     Handle user login with email verification check.
@@ -544,10 +544,10 @@ def user_games_view(request):
     ]
     return Response({"games": games_data}, status=status.HTTP_200_OK)
 
-@csrf_exempt
-@api_view(["GET", "POST"])
+@rate_limit(endpoint_type='ANALYSIS')
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def analyze_game_view(request, game_id):
+def analyze_game(request, game_id):
     """
     Endpoint to analyze a specific game by its ID.
     """
@@ -686,10 +686,10 @@ def analyze_game_view(request, game_id):
         logger.error("Error in analyze_game_view: %s", str(e), exc_info=True)
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@csrf_exempt
-@api_view(["POST"])
+@rate_limit(endpoint_type='ANALYSIS')
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def analyze_batch_games_view(request):
+def batch_analyze(request):
     """
     Endpoint to analyze a batch of games.
     """
@@ -1143,7 +1143,7 @@ def all_games_view(request):
     ]
     return Response({"games": games_data}, status=status.HTTP_200_OK)
 
-@rate_limit(max_requests=10, time_window=60)  # 10 requests per minute
+@rate_limit(endpoint_type='CREDITS')
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_credits(request):
@@ -1160,7 +1160,7 @@ def get_credits(request):
         logger.error(f"Error getting credits for user {request.user.username}: {str(e)}")
         return Response({'error': str(e)}, status=500)
 
-@rate_limit(max_requests=5, time_window=60)  # 5 requests per minute
+@rate_limit(endpoint_type='CREDITS')
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def deduct_credits(request):
@@ -1203,7 +1203,7 @@ def deduct_credits(request):
         logger.error(f"Error deducting credits: {str(e)}")
         return Response({'error': str(e)}, status=500)
 
-@rate_limit(max_requests=3, time_window=60)  # 3 requests per minute
+@rate_limit(endpoint_type='CREDITS')
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def purchase_credits(request):
@@ -1249,7 +1249,7 @@ def purchase_credits(request):
             'details': str(e)
         }, status=500)
 
-@rate_limit(max_requests=3, time_window=60)  # 3 requests per minute
+@rate_limit(endpoint_type='CREDITS')
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def confirm_purchase(request):
@@ -1340,8 +1340,8 @@ def token_refresh_view(request):
     except Exception as e:
         return Response({'error': str(e)}, status=400)
 
-@csrf_exempt
-@api_view(["POST"])
+@rate_limit(endpoint_type='AUTH')
+@api_view(['POST'])
 def request_password_reset(request):
     """
     Handle password reset request.

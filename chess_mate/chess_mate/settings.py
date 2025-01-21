@@ -283,3 +283,34 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+# Redis Configuration for Rate Limiting
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+# For Redis Cloud, format should be: redis://default:password@host:port
+if os.getenv('REDIS_CLOUD_URL'):
+    REDIS_URL = os.getenv('REDIS_CLOUD_URL')
+
+# Rate Limiting Settings
+RATE_LIMIT = {
+    'DEFAULT': {
+        'MAX_REQUESTS': 100,  # Default max requests per time window
+        'TIME_WINDOW': 60,    # Default time window in seconds
+    },
+    'AUTH': {
+        'MAX_REQUESTS': 5,    # 5 requests per minute for auth endpoints
+        'TIME_WINDOW': 60,
+    },
+    'ANALYSIS': {
+        'MAX_REQUESTS': 3,    # 3 requests per minute for analysis endpoints
+        'TIME_WINDOW': 60,
+    },
+    'CREDITS': {
+        'MAX_REQUESTS': 5,    # 5 requests per minute for credit operations
+        'TIME_WINDOW': 60,
+    },
+    'GAMES': {
+        'MAX_REQUESTS': 10,   # 10 requests per minute for game operations
+        'TIME_WINDOW': 60,
+    },
+}
