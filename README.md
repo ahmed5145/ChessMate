@@ -7,6 +7,8 @@
 
 # ChessMate - Advanced Chess Game Analysis Platform
 
+> **Note:** This repo is the early public build of ChessMate. The production system — live at [chess-mate.online](https://chess-mate.online) — is developed in a private repo. Architecture, tradeoffs, and current state are covered in the [case study](https://portfolio-sigma-fawn-97.vercel.app/work/case-study).
+
 ChessMate is a sophisticated chess analysis platform that combines the power of the Stockfish engine with modern web technologies to provide detailed game analysis and personalized feedback.
 
 ## Navigation
