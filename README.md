@@ -5,11 +5,11 @@
 [![GitHub issues](https://img.shields.io/github/issues/ahmed5145/chessmate.svg)](https://github.com/ahmed5145/chessmate/issues)
 ![GitHub last commit](https://img.shields.io/github/last-commit/ahmed5145/chessmate)
 
-# ChessMate - Advanced Chess Game Analysis Platform
+# ChessMate - Chess Coaching Platform
 
-> **Note:** This repo is the early public build of ChessMate. The production system — live at [chess-mate.online](https://chess-mate.online) — is developed in a private repo. Architecture, tradeoffs, and current state are covered in the [case study](https://portfolio-sigma-fawn-97.vercel.app/work/case-study).
+> **Note:** This repo is the early public build of ChessMate. The production system — live at [chess-mate.online](https://chess-mate.online) — is developed in a private repo. Architecture, tradeoffs, and current state are covered in the [case study](https://ahmedmohamedh.vercel.app/work/case-study).
 
-ChessMate is a sophisticated chess analysis platform that combines the power of the Stockfish engine with modern web technologies to provide detailed game analysis and personalized feedback.
+ChessMate is a chess coaching platform that uses the Stockfish engine to analyze batches of games and generate personalized coaching reports.
 
 ## Navigation
 - [Features](#features)
@@ -24,8 +24,8 @@ ChessMate is a sophisticated chess analysis platform that combines the power of 
 
 ## Features
 
-- **Game Analysis**: Detailed analysis of chess games using Stockfish engine
-- **Personalized Feedback**: AI-powered feedback on your games
+- **Game Analysis**: Batch analysis of chess games using the Stockfish engine
+- **Personalized Feedback**: Coaching feedback generated from your own games
 - **Credit System**: Flexible credit packages for game analysis
 - **Multi-Platform Support**: Import games from Chess.com and Lichess
 - **Modern UI**: Responsive design with real-time updates
@@ -152,5 +152,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Lichess API
 
 ---
-*Document last updated on January 18, 2024*  
 *Copyright © 2024 ChessMate. All rights reserved.*
